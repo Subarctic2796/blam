@@ -10,23 +10,24 @@ import (
 )
 
 var keywords = map[string]token.TokenType{
-	"and":    token.AND,
-	"class":  token.CLASS,
-	"else":   token.ELSE,
-	"false":  token.FALSE,
-	"for":    token.FOR,
-	"fun":    token.FUN,
-	"if":     token.IF,
-	"nil":    token.NIL,
-	"or":     token.OR,
-	"print":  token.PRINT,
-	"return": token.RETURN,
-	"super":  token.SUPER,
-	"this":   token.THIS,
-	"true":   token.TRUE,
-	"var":    token.VAR,
-	"while":  token.WHILE,
-	"break":  token.BREAK,
+	"and":      token.AND,
+	"class":    token.CLASS,
+	"else":     token.ELSE,
+	"false":    token.FALSE,
+	"for":      token.FOR,
+	"fun":      token.FUN,
+	"if":       token.IF,
+	"nil":      token.NIL,
+	"or":       token.OR,
+	"print":    token.PRINT,
+	"return":   token.RETURN,
+	"super":    token.SUPER,
+	"this":     token.THIS,
+	"true":     token.TRUE,
+	"var":      token.VAR,
+	"while":    token.WHILE,
+	"break":    token.BREAK,
+	"continue": token.CONTINUE,
 }
 
 var (
@@ -110,9 +111,9 @@ func (l *Lexer) scanToken() {
 	case '"':
 		l.addString()
 	default:
-		if l.isDigit(c) {
+		if isDigit(c) {
 			l.addNumber()
-		} else if l.isAlpha(c) {
+		} else if isAlpha(c) {
 			l.identifier()
 		} else {
 			l.report(ErrUnexpectedChar)
@@ -167,15 +168,15 @@ func (l *Lexer) addString() {
 }
 
 func (l *Lexer) addNumber() {
-	for l.isDigit(l.peek()) {
+	for isDigit(l.peek()) {
 		l.advance()
 	}
 
-	if l.peek() == '.' && l.isDigit(l.peekNext()) {
+	if l.peek() == '.' && isDigit(l.peekNext()) {
 		// consume '.'
 		l.advance()
 
-		for l.isDigit(l.peek()) {
+		for isDigit(l.peek()) {
 			l.advance()
 		}
 	}
@@ -188,7 +189,7 @@ func (l *Lexer) addNumber() {
 }
 
 func (l *Lexer) identifier() {
-	for l.isAlphaNumeric(l.peek()) {
+	for isAlphaNumeric(l.peek()) {
 		l.advance()
 	}
 	txt := string(l.src[l.start:l.cur])
@@ -246,11 +247,11 @@ func (l *Lexer) match(expected rune) bool {
 	return true
 }
 
-func (l *Lexer) isDigit(c rune) bool { return c >= '0' && c <= '9' }
-func (l *Lexer) isAlpha(c rune) bool {
+func isDigit(c rune) bool { return c >= '0' && c <= '9' }
+func isAlpha(c rune) bool {
 	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'
 }
-func (l *Lexer) isAlphaNumeric(c rune) bool { return l.isAlpha(c) || l.isDigit(c) }
+func isAlphaNumeric(c rune) bool { return isAlpha(c) || isDigit(c) }
 
 func (l *Lexer) report(msg error) {
 	fullMsg := fmt.Sprintf("[line %d] [Lexer] Error: %s", l.Line, msg)

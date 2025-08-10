@@ -3,7 +3,7 @@ package token
 import "fmt"
 
 //go:generate go tool stringer -type=TokenType
-type TokenType int
+type TokenType byte // use byte as there are currently only 44 types of token
 
 type Token struct {
 	Kind    TokenType
@@ -60,7 +60,7 @@ const (
 	IF
 	NIL
 	OR
-	PRINT
+	PRINT // NOTE: temporary until have built in functions
 	RETURN
 	SUPER
 	THIS
@@ -69,4 +69,6 @@ const (
 	WHILE
 
 	EOF
+
+	NUM_TOKENS
 )

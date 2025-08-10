@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/Subarctic2796/blam/lexer"
+	"github.com/Subarctic2796/blam/parser"
 )
 
 func main() {
@@ -53,14 +54,22 @@ func runFile(path string) error {
 }
 
 func run(src string) error {
+	// tokinze the input
 	lex := lexer.NewLexer(src)
 	tokens, err := lex.ScanTokens()
 	if err != nil {
 		return err
 	}
 
-	for _, token := range tokens {
-		fmt.Println(token)
+	// build the ast
+	parser := parser.NewParser(tokens)
+	stmts, err := parser.Parse()
+	if err != nil {
+		return err
+	}
+
+	for _, stmt := range stmts {
+		fmt.Println(stmt)
 	}
 
 	return nil

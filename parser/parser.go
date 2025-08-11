@@ -18,28 +18,18 @@ const (
 	class_SUBCLASS
 )
 
-const (
-	errReturnTopLevel = "Can't return from top-level code"
-	errReturnFromInit = "Can't return a value from an initializer"
-
-	errInheritsSelf       = "A class can't inherit from itself"
-	errThisNotInClass     = "Can't use 'this' outside of a class"
-	errSuperNotInClass    = "Can't use 'super' outside of a class"
-	errSuperNotInSubClass = "Can't use 'super' in a class with no superclass"
-
-	errUnHashable = "Can only use: strings, numbers, bools, and instances as hashmap keys"
-
-	// NOTE: 'static' keyword doesn't exist yet
-	// errThisInStatic       = "Can't use 'this' in a static function"
-	// errInitIsStatic       = "Can't use 'init' as a static function"
-	// errStaticNotInClass   = "Can't use 'static' outside of a class"
-	// errStaticNeedsMethod  = "'static' must be before a class method"
-	// errSuperInStatic      = "Can't use 'super' in a static method"
-
-	// NOTE: not used yet
-	// errAlreadyInScope       = "Already a variable with this name in this scope"
-	// errLocalInitializesSelf = "Can't read local variable in its own initializer"
-)
+// NOTE: will add these checks later
+// const (
+// 'static' keyword doesn't exist
+// 	errThisInStatic         = "Can't use 'this' in a static function"
+// 	errInitIsStatic         = "Can't use 'init' as a static function"
+// 	errStaticNotInClass     = "Can't use 'static' outside of a class"
+// 	errStaticNeedsMethod    = "'static' must be before a class method"
+// 	errSuperInStatic        = "Can't use 'super' in a static method"
+// Not used yet
+// 	errAlreadyInScope       = "Already a variable with this name in this scope"
+// 	errLocalInitializesSelf = "Can't read local variable in its own initializer"
+// )
 
 type Parser struct {
 	tokens    []token.Token
@@ -157,7 +147,7 @@ func (p *Parser) declaration() (ast.Stmt, error) {
 		return p.classDecl()
 	}
 
-	// chech for lambdas
+	// check for lambdas
 	if p.check(token.FUN) && p.checkNext(token.IDENTIFIER) {
 		// it wasn't a lambda so parse the function
 		_, err := p.consume(token.FUN, "")
@@ -204,11 +194,11 @@ func (p *Parser) classDecl() (ast.Stmt, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		supercls = &ast.VariableExpr{Name: p.previous()}
 		if supercls.Name.Lexeme == name.Lexeme {
 			// report error only don't bail
-			// error is: a class can't inherit from itself
-			p.reportErr(supercls.Name, errInheritsSelf)
+			p.reportErr(supercls.Name, "A class can't inherit from itself")
 		}
 		// we are now in a subclass
 		p.curClass = class_SUBCLASS
@@ -227,6 +217,7 @@ func (p *Parser) classDecl() (ast.Stmt, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		methods = append(methods, method)
 	}
 
@@ -234,6 +225,7 @@ func (p *Parser) classDecl() (ast.Stmt, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return &ast.ClassStmt{Name: name, Superclass: supercls, Methods: methods}, nil
 }
 
@@ -259,9 +251,9 @@ func (p *Parser) function(kind ast.FnType) (*ast.FnStmt, error) {
 	// so we unwrap the lambda into a function
 	return &ast.FnStmt{
 		Name:   name,
-		Params: body.Func.Params,
-		Body:   body.Func.Body,
-		Kind:   body.Func.Kind,
+		Params: body.Params,
+		Body:   body.Body,
+		Kind:   body.Kind,
 	}, nil
 }
 
@@ -290,10 +282,12 @@ func (p *Parser) lambda(kind ast.FnType) (*ast.LambdaExpr, error) {
 				// let us have 255 parameters for a function
 				p.reportErr(p.peek(), "Can't have more than 255 parameters")
 			}
+
 			ident, err := p.consume(token.IDENTIFIER, "Expect parameter name")
 			if err != nil {
 				return nil, err
 			}
+
 			params = append(params, ident)
 		}
 	}
@@ -314,8 +308,14 @@ func (p *Parser) lambda(kind ast.FnType) (*ast.LambdaExpr, error) {
 	if err != nil {
 		return nil, err
 	}
-	fn := &ast.FnStmt{Name: keyword, Params: params, Body: body, Kind: kind}
-	return &ast.LambdaExpr{Func: fn}, nil
+
+	return &ast.LambdaExpr{
+		FnStmt: &ast.FnStmt{
+			Name:   keyword,
+			Params: params,
+			Body:   body,
+			Kind:   kind,
+		}}, nil
 }
 
 func (p *Parser) varDecl() (ast.Stmt, error) {
@@ -337,14 +337,30 @@ func (p *Parser) varDecl() (ast.Stmt, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return &ast.VarStmt{Name: name, Initializer: init}, nil
 }
 
 func (p *Parser) statement() (ast.Stmt, error) {
 	if p.match(token.BREAK, token.CONTINUE) {
-		return p.loopControlStmt()
+		keyword := p.previous()
+		msg := fmt.Sprintf("Must be in a loop to use '%s'", keyword.Lexeme)
+		if p.loopDepth == 0 {
+			p.reportErr(keyword, msg)
+		}
+
+		msg = fmt.Sprintf("Expect ';' after '%s'", keyword.Lexeme)
+		_, err := p.consume(token.SEMICOLON, msg)
+		if err != nil {
+			return nil, err
+		}
+
+		return &ast.ControlStmt{Keyword: keyword, Value: nil}, nil
 	} else if p.match(token.FOR) {
-		return p.forStmt()
+		p.loopDepth++ // so we can make sure 'break' and 'continue' are in a loop
+		loop, err := p.forStmt()
+		p.loopDepth--
+		return loop, err
 	} else if p.match(token.IF) {
 		return p.ifStmt()
 	} else if p.match(token.PRINT) { // TODO: temp while no native funcs
@@ -352,7 +368,10 @@ func (p *Parser) statement() (ast.Stmt, error) {
 	} else if p.match(token.RETURN) {
 		return p.returnStmt()
 	} else if p.match(token.WHILE) {
-		return p.whileStmt()
+		p.loopDepth++ // so we can make sure 'break' and 'continue' are in a loop
+		loop, err := p.whileStmt()
+		p.loopDepth--
+		return loop, err
 	} else if p.match(token.LBRACE) {
 		block, err := p.block()
 		if err != nil {
@@ -361,22 +380,6 @@ func (p *Parser) statement() (ast.Stmt, error) {
 		return &ast.BlockStmt{Statements: block}, nil
 	}
 	return p.expressionStmt()
-}
-
-func (p *Parser) loopControlStmt() (ast.Stmt, error) {
-	keyword := p.previous()
-	msg := fmt.Sprintf("Must be in a loop to use '%s'", keyword.Lexeme)
-	if p.loopDepth == 0 {
-		p.reportErr(keyword, msg)
-	}
-
-	msg = fmt.Sprintf("Expect ';' after '%s'", keyword.Lexeme)
-	_, err := p.consume(token.SEMICOLON, msg)
-	if err != nil {
-		return nil, err
-	}
-
-	return &ast.ControlStmt{Keyword: keyword, Value: nil}, nil
 }
 
 func (p *Parser) forStmt() (ast.Stmt, error) {
@@ -418,6 +421,7 @@ func (p *Parser) forStmt() (ast.Stmt, error) {
 			return nil, err
 		}
 	}
+
 	_, err = p.consume(token.SEMICOLON, "Expect ';' after loop condition")
 	if err != nil {
 		return nil, err
@@ -430,13 +434,11 @@ func (p *Parser) forStmt() (ast.Stmt, error) {
 			return nil, err
 		}
 	}
+
 	_, err = p.consume(token.RPAREN, "Expect ')' after for clauses")
 	if err != nil {
 		return nil, err
 	}
-
-	p.loopDepth++ // so we can make sure 'break' and 'continue' are in a loop
-	defer func() { p.loopDepth-- }()
 
 	body, err := p.statement()
 	if err != nil {
@@ -457,6 +459,7 @@ func (p *Parser) forStmt() (ast.Stmt, error) {
 	if cond == nil {
 		cond = &ast.Literal{Value: true}
 	}
+
 	body = &ast.WhileStmt{Condition: cond, Body: body}
 
 	// add the init statement
@@ -511,17 +514,19 @@ func (p *Parser) printStmt() (ast.Stmt, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	_, err = p.consume(token.SEMICOLON, "Expect ';' after value")
 	if err != nil {
 		return nil, err
 	}
+
 	return &ast.PrintStmt{Expression: val}, nil
 }
 
 func (p *Parser) returnStmt() (ast.Stmt, error) {
 	keyword := p.previous()
 	if p.curFN == ast.FN_NONE {
-		p.reportErr(keyword, errReturnTopLevel)
+		p.reportErr(keyword, "Can't return from top-level code")
 	}
 
 	var val ast.Expr
@@ -533,6 +538,7 @@ func (p *Parser) returnStmt() (ast.Stmt, error) {
 			return nil, err
 		}
 	}
+
 	_, err = p.consume(token.SEMICOLON, "Expect ';' after return value")
 	if err != nil {
 		return nil, err
@@ -540,8 +546,9 @@ func (p *Parser) returnStmt() (ast.Stmt, error) {
 
 	// can't return a value from a constructor function
 	if p.curFN == ast.FN_INIT && val != nil {
-		p.reportErr(keyword, errReturnFromInit)
+		p.reportErr(keyword, "Can't return a value from an initializer")
 	}
+
 	return &ast.ControlStmt{Keyword: keyword, Value: val}, nil
 }
 
@@ -556,14 +563,11 @@ func (p *Parser) whileStmt() (ast.Stmt, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	_, err = p.consume(token.RPAREN, "Expect ')' after condition")
 	if err != nil {
 		return nil, err
 	}
-
-	// update loopDepth
-	p.loopDepth++
-	defer func() { p.loopDepth-- }()
 
 	body, err := p.statement()
 	if err != nil {
@@ -578,10 +582,12 @@ func (p *Parser) expressionStmt() (ast.Stmt, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	_, err = p.consume(token.SEMICOLON, "Expect ';' after expression")
 	if err != nil {
 		return nil, err
 	}
+
 	return &ast.ExprStmt{Expression: expr}, nil
 }
 
@@ -592,6 +598,7 @@ func (p *Parser) block() ([]ast.Stmt, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		stmts = append(stmts, stmt)
 	}
 
@@ -884,10 +891,11 @@ func (p *Parser) primary() (ast.Expr, error) {
 		return &ast.Literal{Value: p.previous().Literal}, nil
 	} else if p.match(token.SUPER) {
 		keyword := p.previous()
+
 		if p.curClass == class_NONE {
-			p.reportErr(keyword, errSuperNotInClass)
+			p.reportErr(keyword, "Can't use 'super' outside of a class")
 		} else if p.curClass != class_SUBCLASS {
-			p.reportErr(keyword, errSuperNotInSubClass)
+			p.reportErr(keyword, "Can't use 'super' in a class with no superclass")
 		}
 
 		_, err := p.consume(token.DOT, "Expect '.' after 'super'")
@@ -904,12 +912,21 @@ func (p *Parser) primary() (ast.Expr, error) {
 	} else if p.match(token.THIS) {
 		keyword := p.previous()
 		if p.curClass == class_NONE {
-			p.reportErr(keyword, errThisNotInClass)
+			p.reportErr(keyword, "Can't use 'this' outside of a class")
 		}
 
 		return &ast.ThisExpr{Keyword: keyword}, nil
 	} else if p.match(token.FUN) {
 		return p.lambda(ast.FN_LAMBDA)
+	} else if p.match(token.IF) {
+		// parse if expression
+		// NOTE: not sure if this is being parsed correctly
+		ifS, err := p.ifStmt()
+		if err != nil {
+			return nil, err
+		}
+
+		return &ast.IfExpr{If: ifS.(*ast.IfStmt)}, nil
 	} else if p.match(token.IDENTIFIER) {
 		return &ast.VariableExpr{Name: p.previous()}, nil
 	} else if p.match(token.LPAREN) {
@@ -960,6 +977,7 @@ func (p *Parser) finishArray() ([]ast.Expr, error) {
 			if err != nil {
 				return nil, err
 			}
+
 			elements = append(elements, elm)
 		}
 	}
@@ -968,6 +986,7 @@ func (p *Parser) finishArray() ([]ast.Expr, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return elements, nil
 }
 
@@ -989,11 +1008,11 @@ func (p *Parser) finishHashMap() (map[ast.Expr]ast.Expr, error) {
 			// check for unhashable types
 			switch kt := key.(type) {
 			case *ast.ArrayLiteral:
-				p.reportErr(kt.Sqr, errUnHashable)
+				p.reportErr(kt.Sqr, "Unhashable type")
 			case *ast.HashLiteral:
-				p.reportErr(kt.Brace, errUnHashable)
+				p.reportErr(kt.Brace, "Unhashable type")
 			case *ast.LambdaExpr:
-				p.reportErr(kt.Func.Name, errUnHashable)
+				p.reportErr(kt.Name, "Unhashable type")
 			}
 
 			_, err = p.consume(token.COLON, "Expect ':' after hashmap key")
@@ -1006,6 +1025,7 @@ func (p *Parser) finishHashMap() (map[ast.Expr]ast.Expr, error) {
 			if err != nil {
 				return nil, err
 			}
+
 			pairs[key] = val
 		}
 	}
@@ -1014,5 +1034,6 @@ func (p *Parser) finishHashMap() (map[ast.Expr]ast.Expr, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return pairs, nil
 }

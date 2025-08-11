@@ -27,9 +27,8 @@ func (e *ArrayLiteral) String() string {
 }
 
 type AssignExpr struct {
-	Name       *token.Token
-	Value      Expr
-	ScopeDepth int
+	Name  *token.Token
+	Value Expr
 }
 
 func (e *AssignExpr) String() string {
@@ -115,10 +114,11 @@ func (e *HashLiteral) String() string {
 }
 
 type LambdaExpr struct {
-	Func *FnStmt
+	// use composition, this is like inheritance in go
+	*FnStmt
 }
 
-func (e *LambdaExpr) String() string { return e.Func.String() }
+func (e *LambdaExpr) String() string { return e.FnStmt.String() }
 
 type Literal struct {
 	Value any
@@ -163,9 +163,8 @@ func (e *IndexedSetExpr) String() string {
 }
 
 type SuperExpr struct {
-	Keyword    *token.Token
-	Method     *token.Token
-	ScopeDepth int
+	Keyword *token.Token
+	Method  *token.Token
 }
 
 func (e *SuperExpr) String() string {
@@ -189,8 +188,7 @@ func (e *UnaryExpr) String() string {
 }
 
 type VariableExpr struct {
-	Name       *token.Token
-	ScopeDepth int
+	Name *token.Token
 }
 
 func (e *VariableExpr) String() string { return e.Name.Lexeme }

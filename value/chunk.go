@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/Subarctic2796/blam/opcodes"
+	"github.com/Subarctic2796/blam/opcode"
 )
 
 // stores the line info in rle form
@@ -85,8 +85,8 @@ func DisassembleInst(c *Chunk, offset int) int {
 		fmt.Fprintf(os.Stderr, "%4d ", line)
 	}
 
-	switch inst := opcodes.OpCode(c.Code[offset]); inst {
-	case opcodes.OP_CLOSURE:
+	switch inst := opcode.OpCode(c.Code[offset]); inst {
+	case opcode.OP_CLOSURE:
 		const_ := c.Code[offset+1]
 		offset += 2
 		fn := c.Constants[const_].(*ObjFn)
@@ -104,48 +104,48 @@ func DisassembleInst(c *Chunk, offset int) int {
 				scope, idx)
 		}
 		return offset
-	case opcodes.OP_INVOKE, opcodes.OP_SUPER_INVOKE: // invokeInst
+	case opcode.OP_INVOKE, opcode.OP_SUPER_INVOKE: // invokeInst
 		idx, argc := c.Code[offset+1], c.Code[offset+2]
 		val := c.Constants[idx]
 		fmt.Fprintf(os.Stderr, "%-16s (%d args) %4d '%s'\n", inst, argc, idx, val)
 		return offset + 3
-	case opcodes.OP_JUMP, opcodes.OP_JUMP_IF_FALSE, opcodes.OP_LOOP: // jumpInst
+	case opcode.OP_JUMP, opcode.OP_JUMP_IF_FALSE, opcode.OP_LOOP: // jumpInst
 		jmp := int((uint(c.Code[offset+1]) << 8) | uint(c.Code[offset+2]))
-		if inst == opcodes.OP_LOOP {
+		if inst == opcode.OP_LOOP {
 			jmp = -jmp
 		}
 		fmt.Fprintf(os.Stderr, "%-16s %4d -> %d\n", inst, offset, offset+3+jmp)
 		return offset + 3
-	case opcodes.OP_GET_LOCAL, opcodes.OP_SET_LOCAL, // byteInst
-		opcodes.OP_GET_UPVALUE, opcodes.OP_SET_UPVALUE,
-		opcodes.OP_ARRAY, opcodes.OP_HASH,
-		opcodes.OP_CALL:
+	case opcode.OP_GET_LOCAL, opcode.OP_SET_LOCAL, // byteInst
+		opcode.OP_GET_UPVALUE, opcode.OP_SET_UPVALUE,
+		opcode.OP_ARRAY, opcode.OP_HASH,
+		opcode.OP_CALL:
 		slot := c.Code[offset+1]
 		fmt.Fprintf(os.Stderr, "%-16s %4d\n", inst, slot)
 		return offset + 2
-	case opcodes.OP_CONSTANT, // constantInst
-		opcodes.OP_DEFINE_GLOBAL,
-		opcodes.OP_GET_GLOBAL, opcodes.OP_SET_GLOBAL,
-		opcodes.OP_GET_PROPERTY, opcodes.OP_SET_PROPERTY,
-		opcodes.OP_GET_SUPER,
-		opcodes.OP_CLASS,
-		opcodes.OP_METHOD:
+	case opcode.OP_CONSTANT, // constantInst
+		opcode.OP_DEFINE_GLOBAL,
+		opcode.OP_GET_GLOBAL, opcode.OP_SET_GLOBAL,
+		opcode.OP_GET_PROPERTY, opcode.OP_SET_PROPERTY,
+		opcode.OP_GET_SUPER,
+		opcode.OP_CLASS,
+		opcode.OP_METHOD:
 		idx := c.Code[offset+1]
 		fmt.Fprintf(os.Stderr, "%-16s %4d '%s'\n", inst, idx, c.Constants[idx])
 		return offset + 2
-	case opcodes.OP_NIL, opcodes.OP_FALSE, opcodes.OP_TRUE, // simpleInst
-		opcodes.OP_EQUAL, opcodes.OP_NOT_EQUAL,
-		opcodes.OP_GREATER, opcodes.OP_LESS,
-		opcodes.OP_GREATER_EQUAL, opcodes.OP_LESS_EQUAL,
-		opcodes.OP_ADD, opcodes.OP_SUBTRACT,
-		opcodes.OP_MULTIPLY, opcodes.OP_DIVIDE,
-		opcodes.OP_NOT, opcodes.OP_NEGATE,
-		opcodes.OP_GET_INDEX, opcodes.OP_SET_INDEX,
-		opcodes.OP_PRINT,
-		opcodes.OP_POP,
-		opcodes.OP_INHERIT,
-		opcodes.OP_CLOSE_UPVALUE,
-		opcodes.OP_RETURN:
+	case opcode.OP_NIL, opcode.OP_FALSE, opcode.OP_TRUE, // simpleInst
+		opcode.OP_EQUAL, opcode.OP_NOT_EQUAL,
+		opcode.OP_GREATER, opcode.OP_LESS,
+		opcode.OP_GREATER_EQUAL, opcode.OP_LESS_EQUAL,
+		opcode.OP_ADD, opcode.OP_SUBTRACT,
+		opcode.OP_MULTIPLY, opcode.OP_DIVIDE,
+		opcode.OP_NOT, opcode.OP_NEGATE,
+		opcode.OP_GET_INDEX, opcode.OP_SET_INDEX,
+		opcode.OP_PRINT,
+		opcode.OP_POP,
+		opcode.OP_INHERIT,
+		opcode.OP_CLOSE_UPVALUE,
+		opcode.OP_RETURN:
 		fmt.Fprintln(os.Stderr, inst)
 		return offset + 1
 	default:

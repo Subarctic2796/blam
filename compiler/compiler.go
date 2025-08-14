@@ -5,7 +5,7 @@ import (
 	"os"
 
 	"github.com/Subarctic2796/blam/ast"
-	"github.com/Subarctic2796/blam/opcodes"
+	"github.com/Subarctic2796/blam/opcode"
 	"github.com/Subarctic2796/blam/token"
 	"github.com/Subarctic2796/blam/value"
 )
@@ -21,7 +21,7 @@ const (
 type local struct {
 	name   token.Token
 	depth  int
-	exitOP opcodes.OpCode
+	exitOP opcode.OpCode
 }
 
 type upvalue struct {
@@ -38,7 +38,7 @@ type Compiler struct {
 	scopeDepth     int
 	upvalues       []upvalue
 	constantsTable map[value.Value]int
-	lastOpCode     opcodes.OpCode
+	lastOpCode     opcode.OpCode
 	curTok         *token.Token
 	curErr         error
 }
@@ -64,17 +64,36 @@ func NewCompiler(enclosing *Compiler, ft ast.FnType) *Compiler {
 		c.locals[0] = local{
 			token.NewToken(token.THIS, "this", nil, -1),
 			0,
-			opcodes.OP_POP,
+			opcode.OP_POP,
 		}
 	} else {
 		c.locals[0] = local{
 			token.NewToken(token.NUM_TOKENS, "", nil, -1),
 			0,
-			opcodes.OP_POP,
+			opcode.OP_POP,
 		}
 	}
 
 	return c
+}
+
+func (c *Compiler) endCompiler() *value.ObjFn {
+	if c.lastOpCode != opcode.OP_RETURN {
+		c.emitReturn()
+	}
+
+	fn := c.fun
+	if c.curErr == nil {
+		// DEBUG_PRINT_CODE
+		if c.fun.Name == "" {
+			value.DisassembleChunk(c.curChunk(), "<script>")
+		} else {
+			value.DisassembleChunk(c.curChunk(), string(c.fun.Name))
+		}
+	}
+
+	c = c.enclosing
+	return fn
 }
 
 func (c *Compiler) Compile(prog []ast.Stmt, globals []value.Value) (*value.ObjFn, error) {
@@ -82,7 +101,9 @@ func (c *Compiler) Compile(prog []ast.Stmt, globals []value.Value) (*value.ObjFn
 		c.compileStmt(stmt)
 	}
 
-	return c.fun, c.curErr
+	fn := c.endCompiler()
+
+	return fn, c.curErr
 }
 
 func (c *Compiler) curChunk() *value.Chunk { return c.fun.Chunk }
@@ -105,20 +126,20 @@ func (c *Compiler) emitBytes(args ...byte) {
 	}
 }
 
-func (c *Compiler) emitOp(op opcodes.OpCode) {
+func (c *Compiler) emitOp(op opcode.OpCode) {
 	c.emitBytes(byte(op))
 	c.lastOpCode = op
 }
 
-func (c *Compiler) emitPOP() { c.emitOp(opcodes.OP_POP) }
+func (c *Compiler) emitPOP() { c.emitOp(opcode.OP_POP) }
 
-func (c *Compiler) emitOpArgs(op opcodes.OpCode, args ...byte) {
+func (c *Compiler) emitOpArgs(op opcode.OpCode, args ...byte) {
 	c.emitOp(op)
 	c.emitBytes(args...)
 }
 
 func (c *Compiler) emitLoop(loopStart int) {
-	c.emitOp(opcodes.OP_LOOP)
+	c.emitOp(opcode.OP_LOOP)
 
 	offset := len(c.curChunk().Code) - loopStart + 2
 	if offset > _UINT16_MAX {
@@ -128,7 +149,7 @@ func (c *Compiler) emitLoop(loopStart int) {
 	c.emitBytes(byte((offset>>8)&0xff), byte(offset&0xff))
 }
 
-func (c *Compiler) emitJmp(op opcodes.OpCode) int {
+func (c *Compiler) emitJmp(op opcode.OpCode) int {
 	c.emitOpArgs(op, 0xff, 0xff)
 	return len(c.curChunk().Code) - 2
 }
@@ -146,11 +167,11 @@ func (c *Compiler) patchJmp(offset int) {
 
 func (c *Compiler) emitReturn() {
 	if c.ftype == ast.FN_INIT {
-		c.emitOpArgs(opcodes.OP_GET_LOCAL, 0)
+		c.emitOpArgs(opcode.OP_GET_LOCAL, 0)
 	} else {
-		c.emitOp(opcodes.OP_NIL)
+		c.emitOp(opcode.OP_NIL)
 	}
-	c.emitOp(opcodes.OP_RETURN)
+	c.emitOp(opcode.OP_RETURN)
 }
 
 func (c *Compiler) mkConst(value value.Value) byte {
@@ -169,7 +190,7 @@ func (c *Compiler) mkConst(value value.Value) byte {
 }
 
 func (c *Compiler) emitConst(value value.Value) {
-	c.emitOpArgs(opcodes.OP_CONSTANT, c.mkConst(value))
+	c.emitOpArgs(opcode.OP_CONSTANT, c.mkConst(value))
 }
 
 func (c *Compiler) beginScope() { c.scopeDepth++ }
@@ -186,7 +207,7 @@ func (c *Compiler) addLocal(name token.Token) {
 		c.reportErr("Too many local variables in function")
 		return
 	}
-	c.locals[c.localCnt] = local{name, -1, opcodes.OP_POP}
+	c.locals[c.localCnt] = local{name, -1, opcode.OP_POP}
 	c.localCnt++
 }
 
@@ -208,11 +229,11 @@ func (c *Compiler) compileStmt(stmt ast.Stmt) {
 	case *ast.IfStmt:
 		c.compileExpr(s.Cond)
 
-		thenJmp := c.emitJmp(opcodes.OP_JUMP_IF_FALSE)
+		thenJmp := c.emitJmp(opcode.OP_JUMP_IF_FALSE)
 		c.emitPOP()
 		c.compileStmt(s.ThenBranch)
 
-		elseJmp := c.emitJmp(opcodes.OP_JUMP)
+		elseJmp := c.emitJmp(opcode.OP_JUMP)
 
 		c.patchJmp(thenJmp)
 		c.emitPOP()
@@ -222,8 +243,9 @@ func (c *Compiler) compileStmt(stmt ast.Stmt) {
 		}
 		c.patchJmp(elseJmp)
 	case *ast.PrintStmt:
+		c.curTok = s.Keyword
 		c.compileExpr(s.Expression)
-		c.emitOp(opcodes.OP_PRINT)
+		c.emitOp(opcode.OP_PRINT)
 	case *ast.ControlStmt:
 		c.curTok = s.Keyword
 		switch s.Keyword.Kind {
@@ -232,7 +254,7 @@ func (c *Compiler) compileStmt(stmt ast.Stmt) {
 				c.emitReturn()
 			} else {
 				c.compileExpr(s.Value)
-				c.emitOp(opcodes.OP_RETURN)
+				c.emitOp(opcode.OP_RETURN)
 			}
 		case token.BREAK, token.CONTINUE:
 			panic(fmt.Sprintf("compiling is not implemented for '%s'", s.Keyword))
@@ -243,7 +265,7 @@ func (c *Compiler) compileStmt(stmt ast.Stmt) {
 		loopStart := len(c.curChunk().Code)
 		c.compileExpr(s.Condition)
 
-		exitJmp := c.emitJmp(opcodes.OP_JUMP_IF_FALSE)
+		exitJmp := c.emitJmp(opcode.OP_JUMP_IF_FALSE)
 		c.emitPOP()
 		c.compileStmt(s.Body)
 		c.emitLoop(loopStart)
@@ -262,7 +284,7 @@ func (c *Compiler) compileExpr(expr ast.Expr) {
 		for _, el := range e.Elements {
 			c.compileExpr(el)
 		}
-		c.emitOpArgs(opcodes.OP_ARRAY, byte(len(e.Elements)))
+		c.emitOpArgs(opcode.OP_ARRAY, byte(len(e.Elements)))
 	case *ast.AssignExpr:
 		panic(fmt.Sprintf("compileExpr not implemented for '%T'", e))
 	case *ast.BinaryExpr:
@@ -271,25 +293,25 @@ func (c *Compiler) compileExpr(expr ast.Expr) {
 		c.compileExpr(e.Right)
 		switch e.Operator.Kind {
 		case token.NEQ:
-			c.emitOp(opcodes.OP_NOT_EQUAL)
+			c.emitOp(opcode.OP_NOT_EQUAL)
 		case token.EQ_EQ:
-			c.emitOp(opcodes.OP_EQUAL)
+			c.emitOp(opcode.OP_EQUAL)
 		case token.GT:
-			c.emitOp(opcodes.OP_GREATER)
+			c.emitOp(opcode.OP_GREATER)
 		case token.GT_EQ:
-			c.emitOp(opcodes.OP_GREATER_EQUAL)
+			c.emitOp(opcode.OP_GREATER_EQUAL)
 		case token.LT:
-			c.emitOp(opcodes.OP_LESS)
+			c.emitOp(opcode.OP_LESS)
 		case token.LT_EQ:
-			c.emitOp(opcodes.OP_LESS_EQUAL)
+			c.emitOp(opcode.OP_LESS_EQUAL)
 		case token.PLUS:
-			c.emitOp(opcodes.OP_ADD)
+			c.emitOp(opcode.OP_ADD)
 		case token.MINUS:
-			c.emitOp(opcodes.OP_SUBTRACT)
+			c.emitOp(opcode.OP_SUBTRACT)
 		case token.STAR:
-			c.emitOp(opcodes.OP_MULTIPLY)
+			c.emitOp(opcode.OP_MULTIPLY)
 		case token.SLASH:
-			c.emitOp(opcodes.OP_DIVIDE)
+			c.emitOp(opcode.OP_DIVIDE)
 		default:
 			return // unreachable
 		}
@@ -299,9 +321,15 @@ func (c *Compiler) compileExpr(expr ast.Expr) {
 		for _, arg := range e.Arguments {
 			c.compileExpr(arg)
 		}
-		c.emitOpArgs(opcodes.OP_CALL, byte(len(e.Arguments)))
+		c.emitOpArgs(opcode.OP_CALL, byte(len(e.Arguments)))
 	case *ast.IndexedGetExpr:
-		panic(fmt.Sprintf("compileExpr not implemented for '%T'", e))
+		c.compileExpr(e.Object)
+		c.curTok = e.Sqr
+		if e.Colon != nil || e.Start == nil {
+			panic("slicing is not implemented yet")
+		}
+		c.compileExpr(e.Start)
+		c.emitOp(opcode.OP_GET_INDEX)
 	case *ast.GroupingExpr:
 		c.compileExpr(e.Expression)
 	case *ast.IfExpr:
@@ -314,7 +342,7 @@ func (c *Compiler) compileExpr(expr ast.Expr) {
 			c.compileExpr(k)
 			c.compileExpr(v)
 		}
-		c.emitOpArgs(opcodes.OP_HASH, byte(len(e.Pairs)))
+		c.emitOpArgs(opcode.OP_HASH, byte(len(e.Pairs)))
 	case *ast.LambdaExpr:
 		panic(fmt.Sprintf("compileExpr not implemented for '%T'", e))
 	case *ast.Literal:
@@ -325,25 +353,25 @@ func (c *Compiler) compileExpr(expr ast.Expr) {
 			c.emitConst(value.String(v))
 		case bool:
 			if v {
-				c.emitOp(opcodes.OP_TRUE)
+				c.emitOp(opcode.OP_TRUE)
 			}
-			c.emitOp(opcodes.OP_FALSE)
+			c.emitOp(opcode.OP_FALSE)
 		case nil:
-			c.emitOp(opcodes.OP_NIL)
+			c.emitOp(opcode.OP_NIL)
 		}
 	case *ast.LogicalExpr:
 		c.compileExpr(e.Left)
 
 		switch e.Operator.Kind {
 		case token.AND:
-			endJmp := c.emitJmp(opcodes.OP_JUMP_IF_FALSE)
+			endJmp := c.emitJmp(opcode.OP_JUMP_IF_FALSE)
 			c.emitPOP()
 			c.curTok = e.Operator
 			c.compileExpr(e.Right)
 			c.patchJmp(endJmp)
 		case token.OR:
-			elseJmp := c.emitJmp(opcodes.OP_JUMP_IF_FALSE)
-			endJmp := c.emitJmp(opcodes.OP_JUMP)
+			elseJmp := c.emitJmp(opcode.OP_JUMP_IF_FALSE)
+			endJmp := c.emitJmp(opcode.OP_JUMP)
 
 			c.patchJmp(elseJmp)
 			c.emitPOP()
@@ -355,7 +383,13 @@ func (c *Compiler) compileExpr(expr ast.Expr) {
 	case *ast.SetExpr:
 		panic(fmt.Sprintf("compileExpr not implemented for '%T'", e))
 	case *ast.IndexedSetExpr:
-		panic(fmt.Sprintf("compileExpr not implemented for '%T'", e))
+		c.compileExpr(e.Object)
+		c.curTok = e.Sqr
+
+		c.compileExpr(e.Index)
+
+		c.compileExpr(e.Value)
+		c.emitOp(opcode.OP_SET_INDEX)
 	case *ast.SuperExpr:
 		panic(fmt.Sprintf("compileExpr not implemented for '%T'", e))
 	case *ast.ThisExpr:
@@ -365,9 +399,9 @@ func (c *Compiler) compileExpr(expr ast.Expr) {
 		c.compileExpr(e.Right)
 		switch e.Operator.Kind { // emit the opr inst
 		case token.BANG:
-			c.emitOp(opcodes.OP_NOT)
+			c.emitOp(opcode.OP_NOT)
 		case token.MINUS:
-			c.emitOp(opcodes.OP_NEGATE)
+			c.emitOp(opcode.OP_NEGATE)
 		default:
 			return // unreachable
 		}

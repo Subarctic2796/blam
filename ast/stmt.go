@@ -109,6 +109,7 @@ func (s *IfStmt) String() string {
 }
 
 type PrintStmt struct {
+	Keyword    *token.Token
 	Expression Expr
 }
 

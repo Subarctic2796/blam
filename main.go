@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/Subarctic2796/blam/ast"
+	"github.com/Subarctic2796/blam/compiler"
 	"github.com/Subarctic2796/blam/lexer"
 	"github.com/Subarctic2796/blam/parser"
 )
@@ -68,9 +70,13 @@ func run(src string) error {
 		return err
 	}
 
-	for _, stmt := range stmts {
-		fmt.Println(stmt)
+	compiler := compiler.NewCompiler(nil, ast.FN_SCRIPT)
+	fn, err := compiler.Compile(stmts, nil)
+	if err != nil {
+		return err
 	}
+
+	fmt.Println(fn)
 
 	return nil
 }

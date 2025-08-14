@@ -510,6 +510,7 @@ func (p *Parser) ifStmt() (ast.Stmt, error) {
 }
 
 func (p *Parser) printStmt() (ast.Stmt, error) {
+	keyword := p.previous()
 	val, err := p.expression()
 	if err != nil {
 		return nil, err
@@ -520,7 +521,7 @@ func (p *Parser) printStmt() (ast.Stmt, error) {
 		return nil, err
 	}
 
-	return &ast.PrintStmt{Expression: val}, nil
+	return &ast.PrintStmt{Keyword: keyword, Expression: val}, nil
 }
 
 func (p *Parser) returnStmt() (ast.Stmt, error) {

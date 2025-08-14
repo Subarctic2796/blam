@@ -9,17 +9,18 @@ func _() {
 	// Re-run the stringer command to generate them again.
 	var x [1]struct{}
 	_ = x[FN_NONE-0]
-	_ = x[FN_NATIVE-1]
-	_ = x[FN_LAMBDA-2]
-	_ = x[FN_FUNC-3]
-	_ = x[FN_INIT-4]
-	_ = x[FN_METHOD-5]
-	_ = x[FN_STATIC-6]
+	_ = x[FN_SCRIPT-1]
+	_ = x[FN_NATIVE-2]
+	_ = x[FN_LAMBDA-3]
+	_ = x[FN_FUNC-4]
+	_ = x[FN_INIT-5]
+	_ = x[FN_METHOD-6]
+	_ = x[FN_STATIC-7]
 }
 
-const _FnType_name = "NONENATIVELAMBDAFUNCINITMETHODSTATIC"
+const _FnType_name = "NONESCRIPTNATIVELAMBDAFUNCINITMETHODSTATIC"
 
-var _FnType_index = [...]uint8{0, 4, 10, 16, 20, 24, 30, 36}
+var _FnType_index = [...]uint8{0, 4, 10, 16, 22, 26, 30, 36, 42}
 
 func (i FnType) String() string {
 	if i >= FnType(len(_FnType_index)-1) {

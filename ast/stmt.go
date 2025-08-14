@@ -12,6 +12,7 @@ type FnType byte
 
 const (
 	FN_NONE FnType = iota
+	FN_SCRIPT
 	FN_NATIVE
 	FN_LAMBDA
 	FN_FUNC

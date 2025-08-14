@@ -58,7 +58,7 @@ func (o *ObjUpvalue) String() string { return fmt.Sprintf("<upvalue %s>", *o.Val
 func (o *ObjUpvalue) Type() string   { return "upvalue" }
 
 type ObjFn struct {
-	Arity, UpValueCnt int
+	Arity, UpvalueCnt int
 	Chunk             *Chunk
 	Name              String
 }
@@ -80,7 +80,7 @@ type ObjClos struct {
 }
 
 func NewObjClos(fn *ObjFn) *ObjClos {
-	return &ObjClos{fn, make([]*ObjUpvalue, fn.UpValueCnt)}
+	return &ObjClos{fn, make([]*ObjUpvalue, fn.UpvalueCnt)}
 }
 
 func (c *ObjClos) String() string { return c.ObjFn.String() }

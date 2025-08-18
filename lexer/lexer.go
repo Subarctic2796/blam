@@ -53,10 +53,7 @@ func (l *Lexer) ScanTokens() ([]token.Token, error) {
 		l.scanToken()
 	}
 	l.tokens = append(l.tokens, token.NewToken(token.EOF, "", nil, l.Line))
-	if l.curErr != nil {
-		return nil, l.curErr
-	}
-	return l.tokens, nil
+	return l.tokens, l.curErr
 }
 
 func (l *Lexer) scanToken() {

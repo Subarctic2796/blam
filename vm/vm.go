@@ -1,8 +1,6 @@
 package vm
 
 import (
-	"fmt"
-	"os"
 	"time"
 
 	"github.com/Subarctic2796/blam/value"

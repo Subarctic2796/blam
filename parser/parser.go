@@ -187,7 +187,7 @@ func (p *Parser) classDecl() (ast.Stmt, error) {
 	}
 
 	var supercls *ast.VariableExpr
-	// TODO: we are currently using '<' for as the 'extends' keyword
+	// TODO: we are currently using '<' for the 'extends' keyword
 	// change it?
 	if p.match(token.LT) {
 		_, err := p.consume(token.IDENTIFIER, "Expect superclass name")
@@ -373,11 +373,12 @@ func (p *Parser) statement() (ast.Stmt, error) {
 		p.loopDepth--
 		return loop, err
 	} else if p.match(token.LBRACE) {
+		brace := p.previous()
 		block, err := p.block()
 		if err != nil {
 			return nil, err
 		}
-		return &ast.BlockStmt{Statements: block}, nil
+		return &ast.BlockStmt{Brace: brace, Statements: block}, nil
 	}
 	return p.expressionStmt()
 }
@@ -554,6 +555,7 @@ func (p *Parser) returnStmt() (ast.Stmt, error) {
 }
 
 func (p *Parser) whileStmt() (ast.Stmt, error) {
+	keyword := p.previous()
 	_, err := p.consume(token.LPAREN, "Expect '(' after 'while'")
 	if err != nil {
 		return nil, err
@@ -575,10 +577,11 @@ func (p *Parser) whileStmt() (ast.Stmt, error) {
 		return nil, err
 	}
 
-	return &ast.WhileStmt{Condition: cond, Body: body}, nil
+	return &ast.WhileStmt{Keyword: keyword, Condition: cond, Body: body}, nil
 }
 
 func (p *Parser) expressionStmt() (ast.Stmt, error) {
+	tok := p.previous()
 	expr, err := p.expression()
 	if err != nil {
 		return nil, err
@@ -589,7 +592,7 @@ func (p *Parser) expressionStmt() (ast.Stmt, error) {
 		return nil, err
 	}
 
-	return &ast.ExprStmt{Expression: expr}, nil
+	return &ast.ExprStmt{Token: tok, Expression: expr}, nil
 }
 
 func (p *Parser) block() ([]ast.Stmt, error) {

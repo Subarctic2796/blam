@@ -26,6 +26,7 @@ type Stmt interface {
 }
 
 type BlockStmt struct {
+	Brace      *token.Token
 	Statements []Stmt
 }
 
@@ -61,6 +62,7 @@ func (s *ClassStmt) String() string {
 }
 
 type ExprStmt struct {
+	Token      *token.Token // first token of the expression
 	Expression Expr
 }
 
@@ -96,6 +98,7 @@ func (s *FnStmt) String() string {
 }
 
 type IfStmt struct {
+	Keyword    *token.Token // the 'if' Keyword
 	Cond       Expr
 	ThenBranch Stmt
 	ElseBranch Stmt
@@ -149,6 +152,7 @@ func (s *VarStmt) String() string {
 }
 
 type WhileStmt struct {
+	Keyword   *token.Token // the 'while' keyword
 	Condition Expr
 	Body      Stmt
 }

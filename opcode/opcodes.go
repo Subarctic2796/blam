@@ -1,4 +1,4 @@
-package opcodes
+package opcode
 
 //go:generate go tool stringer -type=OpCode
 type OpCode byte
@@ -21,6 +21,7 @@ const (
 	OP_GET_INDEX
 	OP_SET_INDEX
 	OP_GET_SUPER
+	OP_SLICE
 	OP_EQUAL
 	OP_NOT_EQUAL
 	OP_GREATER

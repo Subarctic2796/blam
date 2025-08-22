@@ -9,6 +9,15 @@ import (
 	"github.com/Subarctic2796/blam/token"
 )
 
+// resolver stuff
+type varStatus byte
+
+const (
+	vs_DECLARED varStatus = iota
+	vs_DEFINED
+	vs_IMPLICIT
+)
+
 // the class type
 type classType byte
 
@@ -31,10 +40,13 @@ const (
 // 	errLocalInitializesSelf = "Can't read local variable in its own initializer"
 // )
 
+// TODO: resolver stuff?
+
 type Parser struct {
 	tokens    []token.Token
 	cur       int
 	loopDepth int
+	scopes    []map[string]varStatus
 	curClass  classType
 	curFN     ast.FnType
 	curErr    error
@@ -45,6 +57,7 @@ func NewParser(tokens []token.Token) *Parser {
 		tokens:    tokens,
 		cur:       0,
 		loopDepth: 0,
+		scopes:    make([]map[string]varStatus, 0),
 		curClass:  class_NONE,
 		curFN:     ast.FN_NONE,
 		curErr:    nil,
@@ -126,6 +139,32 @@ func (p *Parser) synchronise() {
 	}
 }
 
+// ============== SCOPING HELPERS ==============
+
+func (p *Parser) beginScope() {
+	p.scopes = append(p.scopes, make(map[string]varStatus))
+}
+
+func (p *Parser) endScope() { p.scopes = p.scopes[:len(p.scopes)-1] }
+
+func (p *Parser) declare(name *token.Token) {
+	if len(p.scopes) == 0 {
+		return
+	}
+	scope := p.scopes[len(p.scopes)-1]
+	if _, ok := scope[name.Lexeme]; ok {
+		p.reportErr(name, "Already a variable with this name in this scope")
+	}
+	scope[name.Lexeme] = vs_DECLARED
+}
+
+func (p *Parser) define(name *token.Token) {
+	if len(p.scopes) == 0 {
+		return
+	}
+	p.scopes[len(p.scopes)-1][name.Lexeme] = vs_DEFINED
+}
+
 // ============== ACTUAL PARSING ==============
 
 func (p *Parser) Parse() ([]ast.Stmt, error) {
@@ -179,12 +218,23 @@ func (p *Parser) classDecl() (ast.Stmt, error) {
 	prvCLS := p.curClass
 	p.curClass = class_CLASS
 	// make sure to reset the class state
-	defer func() { p.curClass = prvCLS }()
+	defer func() {
+		if p.curClass == class_SUBCLASS {
+			// close the super class scope if it exists
+			p.endScope()
+		}
+		p.curClass = prvCLS
+		// close this classes scope
+		p.endScope()
+	}()
 
 	name, err := p.consume(token.IDENTIFIER, "Expect class name")
 	if err != nil {
 		return nil, err
 	}
+
+	p.declare(name)
+	p.define(name)
 
 	var supercls *ast.VariableExpr
 	// TODO: we are currently using '<' for the 'extends' keyword
@@ -200,9 +250,15 @@ func (p *Parser) classDecl() (ast.Stmt, error) {
 			// report error only don't bail
 			p.reportErr(supercls.Name, "A class can't inherit from itself")
 		}
+
 		// we are now in a subclass
+		p.beginScope()
 		p.curClass = class_SUBCLASS
+		p.scopes[len(p.scopes)-1]["super"] = vs_IMPLICIT
 	}
+
+	p.beginScope()
+	p.scopes[len(p.scopes)-1]["this"] = vs_IMPLICIT
 
 	_, err = p.consume(token.LBRACE, "Expect '{' before class body")
 	if err != nil {
@@ -236,6 +292,9 @@ func (p *Parser) function(kind ast.FnType) (*ast.FnStmt, error) {
 		return nil, err
 	}
 
+	p.declare(name)
+	p.define(name)
+
 	// check if its an constructor function
 	if name.Lexeme == "init" {
 		kind = ast.FN_INIT
@@ -258,10 +317,15 @@ func (p *Parser) function(kind ast.FnType) (*ast.FnStmt, error) {
 }
 
 func (p *Parser) lambda(kind ast.FnType) (*ast.LambdaExpr, error) {
+	p.beginScope()
+
 	prvFn := p.curFN
 	p.curFN = kind
 	// reset curFN state
-	defer func() { p.curFN = prvFn }()
+	defer func() {
+		p.curFN = prvFn
+		p.endScope()
+	}()
 
 	msg := fmt.Sprintf("Expect '(' after %s name", kind)
 	keyword := p.previous()
@@ -283,12 +347,16 @@ func (p *Parser) lambda(kind ast.FnType) (*ast.LambdaExpr, error) {
 				p.reportErr(p.peek(), "Can't have more than 255 parameters")
 			}
 
-			ident, err := p.consume(token.IDENTIFIER, "Expect parameter name")
+			param, err := p.consume(token.IDENTIFIER, "Expect parameter name")
 			if err != nil {
 				return nil, err
 			}
 
-			params = append(params, ident)
+			// scope stuff
+			p.declare(param)
+			p.define(param)
+
+			params = append(params, param)
 		}
 	}
 
@@ -324,6 +392,8 @@ func (p *Parser) varDecl() (ast.Stmt, error) {
 		return nil, err
 	}
 
+	p.declare(name)
+
 	// parse the initializer expression
 	var init ast.Expr
 	if p.match(token.EQ) {
@@ -337,6 +407,8 @@ func (p *Parser) varDecl() (ast.Stmt, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	p.define(name)
 
 	return &ast.VarStmt{Name: name, Initializer: init}, nil
 }
@@ -373,12 +445,11 @@ func (p *Parser) statement() (ast.Stmt, error) {
 		p.loopDepth--
 		return loop, err
 	} else if p.match(token.LBRACE) {
+		p.beginScope()
 		brace := p.previous()
 		block, err := p.block()
-		if err != nil {
-			return nil, err
-		}
-		return &ast.BlockStmt{Brace: brace, Statements: block}, nil
+		p.endScope()
+		return &ast.BlockStmt{Brace: brace, Statements: block}, err
 	}
 	return p.expressionStmt()
 }
@@ -394,6 +465,9 @@ func (p *Parser) forStmt() (ast.Stmt, error) {
 	//         i = i + 1;
 	//     }
 	// }
+
+	p.beginScope()
+	defer p.endScope()
 
 	_, err := p.consume(token.LPAREN, "Expect '(' after 'for'")
 	if err != nil {
@@ -932,7 +1006,14 @@ func (p *Parser) primary() (ast.Expr, error) {
 
 		return &ast.IfExpr{If: ifS.(*ast.IfStmt)}, nil
 	} else if p.match(token.IDENTIFIER) {
-		return &ast.VariableExpr{Name: p.previous()}, nil
+		name := p.previous()
+		if len(p.scopes) != 0 {
+			state, ok := p.scopes[len(p.scopes)-1][name.Lexeme]
+			if ok && state == vs_DECLARED {
+				p.reportErr(name, "Can't read local variable in its own initializer")
+			}
+		}
+		return &ast.VariableExpr{Name: name}, nil
 	} else if p.match(token.LPAREN) {
 		expr, err := p.expression()
 		if err != nil {
@@ -1003,7 +1084,7 @@ func (p *Parser) finishHashMap() (map[ast.Expr]ast.Expr, error) {
 				break
 			}
 
-			// we don't want a = 3: value, so we increase the precedence
+			// we don't want 'a = 3: value', so we increase the precedence
 			key, err := p.or()
 			if err != nil {
 				return nil, err

@@ -140,11 +140,12 @@ func (e *ObjError) Hash()          {}
 type ObjClass struct {
 	Name    String
 	Init    Value   // either *ObjClos / *ObjNativeFn
+	Statics []Value // static methods are dispacted by index
 	Methods []Value // methods are dispacted by index
 }
 
 func NewObjClass(name String) *ObjClass {
-	return &ObjClass{name, nil, make([]Value, 0)}
+	return &ObjClass{name, nil, make([]Value, 0), make([]Value, 0)}
 }
 
 func (c *ObjClass) String() string { return c.Name.String() }
@@ -172,7 +173,7 @@ func (i *ObjInstance) Hash()        {}
 
 type ObjBoundMethod struct {
 	// really *ObjInstance
-	Receiver Value
+	Receiver Value // the 'this' in the function
 	// can change this to Value so that we can have *ObjClos or *ObjNativeFn
 	Method *ObjClos
 }

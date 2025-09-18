@@ -25,8 +25,11 @@ type VM struct {
 	// where values are stored for usague
 	stack [STACK_MAX]value.Value
 	// stack pointer
-	sp      int
+	sp int
+	// the globals
 	Globals []value.Value
+	// maps a name to the index in the Globals slice
+	GlobalsInfo map[string]int
 	// head of linked list of upvalues used for deduplication
 	// and also to make sure that values are captured correctly
 	openUpvalues *value.ObjUpvalue
@@ -37,6 +40,7 @@ func NewVM() *VM {
 		frameCnt:     0,
 		sp:           0,
 		Globals:      make([]value.Value, 0),
+		GlobalsInfo:  make(map[string]int),
 		openUpvalues: nil,
 	}
 
@@ -52,4 +56,5 @@ func (vm *VM) DefineNative(name string, fn value.NativeFn) {
 		Name: value.String(name),
 		Fn:   fn,
 	})
+	vm.GlobalsInfo[name] = len(vm.Globals) - 1
 }

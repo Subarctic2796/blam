@@ -35,12 +35,7 @@ const (
 // 	errStaticNotInClass     = "Can't use 'static' outside of a class"
 // 	errStaticNeedsMethod    = "'static' must be before a class method"
 // 	errSuperInStatic        = "Can't use 'super' in a static method"
-// Not used yet
-// 	errAlreadyInScope       = "Already a variable with this name in this scope"
-// 	errLocalInitializesSelf = "Can't read local variable in its own initializer"
 // )
-
-// TODO: resolver stuff?
 
 type Parser struct {
 	tokens    []token.Token
@@ -655,7 +650,7 @@ func (p *Parser) whileStmt() (ast.Stmt, error) {
 }
 
 func (p *Parser) expressionStmt() (ast.Stmt, error) {
-	tok := p.previous()
+	tok := p.peek() // then current token
 	expr, err := p.expression()
 	if err != nil {
 		return nil, err

@@ -28,6 +28,7 @@ var keywords = map[string]token.TokenType{
 	"while":    token.WHILE,
 	"break":    token.BREAK,
 	"continue": token.CONTINUE,
+	"const":    token.CONST,
 }
 
 var (

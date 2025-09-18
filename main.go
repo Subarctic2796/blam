@@ -70,8 +70,13 @@ func run(src string) error {
 		return err
 	}
 
-	compiler := compiler.NewCompiler(nil, ast.FN_SCRIPT)
-	fn, err := compiler.Compile(stmts, nil)
+	for _, stmt := range stmts {
+		fmt.Println(stmt)
+	}
+
+	// compile the ast to bytecode
+	compiler := compiler.NewCompiler(nil, ast.FN_SCRIPT, nil, nil)
+	fn, err := compiler.Compile(stmts)
 	if err != nil {
 		return err
 	}

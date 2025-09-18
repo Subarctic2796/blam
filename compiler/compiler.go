@@ -57,13 +57,15 @@ type Compiler struct {
 	localCnt       int
 	scopeDepth     int
 	upvalues       []upvalue
-	constantsTable map[value.Value]int
+	constantTable  map[value.Value]int
+	globals        []value.Value
+	globalsInfo    map[string]int
 	lastOpCode     opcode.OpCode
 	tok            *token.Token
 	curErr         error
 }
 
-func NewCompiler(enclosing *Compiler, ft ast.FnType) *Compiler {
+func NewCompiler(enclosing *Compiler, ft ast.FnType, globals []value.Value, globalsInfo map[string]int) *Compiler {
 	c := &Compiler{
 		enclosing:      enclosing,
 		enclosingClass: nil,
@@ -72,7 +74,9 @@ func NewCompiler(enclosing *Compiler, ft ast.FnType) *Compiler {
 		localCnt:       1,
 		scopeDepth:     0,
 		upvalues:       make([]upvalue, 0, _MAX_UPVALUES),
-		constantsTable: make(map[value.Value]int),
+		constantTable:  make(map[value.Value]int),
+		globals:        globals,
+		globalsInfo:    globalsInfo,
 		tok:            nil,
 		curErr:         nil,
 	}
@@ -124,7 +128,7 @@ func (c *Compiler) endCompiler() *value.ObjFn {
 }
 
 // compiles the program
-func (c *Compiler) Compile(prog []ast.Stmt, globals []value.Value) (*value.ObjFn, error) {
+func (c *Compiler) Compile(prog []ast.Stmt) (*value.ObjFn, error) {
 	for _, stmt := range prog {
 		c.compileStmt(stmt)
 	}
@@ -203,7 +207,7 @@ func (c *Compiler) emitReturn() {
 }
 
 func (c *Compiler) mkConst(value value.Value) byte {
-	if index, ok := c.constantsTable[value]; ok {
+	if index, ok := c.constantTable[value]; ok {
 		// reuse the constant
 		return byte(index)
 	}
@@ -213,7 +217,7 @@ func (c *Compiler) mkConst(value value.Value) byte {
 		return 0
 	}
 	// constant doesn't exist so add it
-	c.constantsTable[value] = idx
+	c.constantTable[value] = idx
 	return byte(idx)
 }
 
@@ -237,6 +241,12 @@ func (c *Compiler) addLocal(name token.Token) {
 	}
 	c.locals[c.localCnt] = local{name, -1, opcode.OP_POP}
 	c.localCnt++
+}
+
+func (c *Compiler) declareVar(name *token.Token) int {
+	if c.scopeDepth == 0 {
+	}
+	panic("TODO: declareVar")
 }
 
 func (c *Compiler) compileStmt(stmt ast.Stmt) {
@@ -362,7 +372,7 @@ func (c *Compiler) compileExpr(expr ast.Expr) {
 		c.compileExpr(e.Object)
 		c.tok = e.Sqr
 		if e.Colon != nil || e.Start == nil {
-			panic("slicing is not implemented yet")
+			panic("compiling for slicing is not implemented yet")
 		}
 		c.compileExpr(e.Start)
 		c.emitOp(opcode.OP_GET_INDEX)

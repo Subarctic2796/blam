@@ -53,6 +53,7 @@ const (
 	BREAK
 	CLASS
 	CONTINUE
+	CONST
 	ELSE
 	FALSE
 	FOR

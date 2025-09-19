@@ -187,7 +187,7 @@ func (l *Lexer) addNumber() {
 }
 
 func (l *Lexer) identifier() {
-	for isAlphaNumeric(l.peek()) {
+	for isAlpha(l.peek()) || isDigit(l.peek()) {
 		l.advance()
 	}
 	txt := string(l.src[l.start:l.cur])
@@ -246,10 +246,7 @@ func (l *Lexer) match(expected rune) bool {
 }
 
 func isDigit(c rune) bool { return c >= '0' && c <= '9' }
-func isAlpha(c rune) bool {
-	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'
-}
-func isAlphaNumeric(c rune) bool { return isAlpha(c) || isDigit(c) }
+func isAlpha(c rune) bool { return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c == '_' }
 
 func (l *Lexer) report(msg error) {
 	fullMsg := fmt.Sprintf("[line %d] [Lexer] Error: %s", l.Line, msg)

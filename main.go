@@ -29,6 +29,8 @@ func main() {
 
 func repl() {
 	scnr := bufio.NewScanner(os.Stdin)
+	lex := lexer.NewLexer("")
+	parser := parser.NewParser(nil)
 
 	for {
 		fmt.Print(">> ")
@@ -37,7 +39,32 @@ func repl() {
 			return
 		}
 
-		_ = run(scnr.Text())
+		// tokenize input
+		lex.Reset(scnr.Text())
+		tokens, err := lex.ScanTokens()
+		if err != nil {
+			continue
+		}
+
+		// parse input
+		parser.Reset(tokens)
+		stmts, err := parser.Parse()
+		if err != nil {
+			continue
+		}
+
+		for _, stmt := range stmts {
+			fmt.Println(stmt)
+		}
+
+		// compile to bytecode
+		compiler := compiler.NewCompiler(nil, ast.FN_SCRIPT, nil, nil)
+		fn, err := compiler.Compile(stmts)
+		if err != nil {
+			continue
+		}
+
+		fmt.Println(fn)
 	}
 }
 
@@ -47,17 +74,8 @@ func runFile(path string) error {
 		return err
 	}
 
-	err = run(string(src))
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func run(src string) error {
 	// tokinze the input
-	lex := lexer.NewLexer(src)
+	lex := lexer.NewLexer(string(src))
 	tokens, err := lex.ScanTokens()
 	if err != nil {
 		return err

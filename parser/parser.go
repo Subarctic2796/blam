@@ -59,6 +59,15 @@ func NewParser(tokens []token.Token) *Parser {
 	}
 }
 
+func (p *Parser) Reset(tokens []token.Token) {
+	p.tokens = tokens
+	p.cur, p.loopDepth = 0, 0
+	clear(p.scopes)
+	p.curClass = class_NONE
+	p.curFN = ast.FN_NONE
+	p.curErr = nil
+}
+
 // ============== HELPERS ==============
 
 func (p *Parser) reportErr(tok *token.Token, msg string) {

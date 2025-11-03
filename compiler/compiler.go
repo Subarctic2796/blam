@@ -16,6 +16,9 @@ const (
 	_UINT8_COUNT  = 256
 	_MAX_LOCALS   = _UINT8_COUNT
 	_MAX_UPVALUES = _UINT8_COUNT
+
+	isLocalFalse byte = 0
+	isLocalTrue  byte = 1
 )
 
 type local struct {
@@ -26,7 +29,12 @@ type local struct {
 
 type upvalue struct {
 	index   byte
-	isLocal bool
+	isLocal byte
+}
+
+type symbol struct {
+	scope ast.Scope
+	index int
 }
 
 type classCompiler struct {
@@ -59,13 +67,19 @@ type Compiler struct {
 	upvalues       []upvalue
 	constantTable  map[value.Value]int
 	globals        []value.Value
-	globalsInfo    map[string]int
+	globalsTable   map[string]int
 	lastOpCode     opcode.OpCode
 	tok            *token.Token
 	curErr         error
 }
 
-func NewCompiler(enclosing *Compiler, ft ast.FnType, globals []value.Value, globalsInfo map[string]int) *Compiler {
+func NewCompiler(enclosing *Compiler, ft ast.FnType, globals []value.Value, globalsTable map[string]int) *Compiler {
+	var tok *token.Token
+	var curErr error
+	if enclosing != nil {
+		tok = enclosing.tok
+		curErr = enclosing.curErr
+	}
 	c := &Compiler{
 		enclosing:      enclosing,
 		enclosingClass: nil,
@@ -76,9 +90,9 @@ func NewCompiler(enclosing *Compiler, ft ast.FnType, globals []value.Value, glob
 		upvalues:       make([]upvalue, 0, _MAX_UPVALUES),
 		constantTable:  make(map[value.Value]int),
 		globals:        globals,
-		globalsInfo:    globalsInfo,
-		tok:            nil,
-		curErr:         nil,
+		globalsTable:   globalsTable,
+		tok:            tok,
+		curErr:         curErr,
 	}
 
 	// the script doesn't have a name
@@ -108,7 +122,7 @@ func NewCompiler(enclosing *Compiler, ft ast.FnType, globals []value.Value, glob
 // this finishes off the currently being compiled function
 // everything is wrapped in a function called '<script>'
 // this can be thought of as a main function
-func (c *Compiler) endCompiler() *value.ObjFn {
+func (c *Compiler) endCompiler() (*Compiler, *value.ObjFn) {
 	if c.lastOpCode != opcode.OP_RETURN {
 		c.emitReturn()
 	}
@@ -123,8 +137,7 @@ func (c *Compiler) endCompiler() *value.ObjFn {
 		}
 	}
 
-	c = c.enclosing
-	return fn
+	return c.enclosing, fn
 }
 
 // compiles the program
@@ -132,23 +145,19 @@ func (c *Compiler) Compile(prog []ast.Stmt) (*value.ObjFn, error) {
 	for _, stmt := range prog {
 		c.compileStmt(stmt)
 	}
-
-	fn := c.endCompiler()
-
+	_, fn := c.endCompiler()
 	return fn, c.curErr
 }
 
 func (c *Compiler) curChunk() *value.Chunk { return c.fun.Chunk }
 
 func (c *Compiler) reportErr(msg string) {
-	fmt.Fprintf(os.Stderr, "[line %d] Error", c.tok.Line)
 	switch c.tok.Kind {
 	case token.EOF:
-		fmt.Fprint(os.Stderr, " at end")
+		fmt.Fprintf(os.Stderr, "[line %d] Error at end: %s\n", c.tok.Line, msg)
 	default:
-		fmt.Fprintf(os.Stderr, " at '%s'", c.tok.Lexeme)
+		fmt.Fprintf(os.Stderr, "[line %d] Error at '%s': %s\n", c.tok.Line, c.tok.Lexeme, msg)
 	}
-	fmt.Fprintf(os.Stderr, ": %s\n", msg)
 	c.curErr = fmt.Errorf("%s", msg)
 }
 
@@ -234,19 +243,146 @@ func (c *Compiler) endScope() {
 	}
 }
 
-func (c *Compiler) addLocal(name token.Token) {
+func (c *Compiler) addLocal(name token.Token) int {
 	if c.localCnt == _MAX_LOCALS {
 		c.reportErr("Too many local variables in function")
-		return
+		return -1
 	}
-	c.locals[c.localCnt] = local{name, -1, opcode.OP_POP}
+	c.locals[c.localCnt] = local{name, c.scopeDepth, opcode.OP_POP}
 	c.localCnt++
+	return c.localCnt - 1
+}
+
+func (c *Compiler) addUpvalue(isLocal byte, index int) int {
+	cnt := c.fun.UpvalueCnt
+	for ix, upv := range c.upvalues {
+		if upv.index == byte(index) && upv.isLocal == isLocal {
+			return ix
+		}
+	}
+
+	if cnt == _MAX_UPVALUES {
+		c.reportErr("Too many upvalues for the scope")
+		return -1
+	}
+	c.upvalues = append(c.upvalues, upvalue{byte(index), isLocal})
+	c.fun.UpvalueCnt++
+	return cnt
 }
 
 func (c *Compiler) declareVar(name *token.Token) int {
 	if c.scopeDepth == 0 {
+		if idx, ok := c.globalsTable[name.Lexeme]; ok {
+			// already got this variable
+			return idx
+		}
+		// need to add it
+		c.globals = append(c.globals, value.Null{})
+		c.globalsTable[name.Lexeme] = len(c.globals) - 1
+		return len(c.globals) - 1
 	}
-	panic("TODO: declareVar")
+	return c.addLocal(*name)
+}
+
+func (c *Compiler) defineVar(symbol int) {
+	// panic("TODO_: defineVar")
+	if c.scopeDepth >= 0 {
+		return
+	}
+	c.emitOpArgs(opcode.OP_SET_GLOBAL, byte(symbol))
+	c.emitPOP()
+}
+
+func (c *Compiler) resolveLocal(name token.Token) int {
+	for i := c.localCnt - 1; i >= 0; i-- {
+		if c.locals[i].name.Lexeme == name.Lexeme {
+			return i
+		}
+	}
+	return -1
+}
+
+func (c *Compiler) findUpvalue(name *token.Token) int {
+	if c.enclosing == nil {
+		return -1
+	}
+
+	if idx := c.enclosing.resolveLocal(*name); idx != -1 {
+		c.enclosing.locals[idx].exitOP = opcode.OP_CLOSE_UPVALUE
+		return c.addUpvalue(isLocalTrue, idx)
+	}
+
+	if idx := c.enclosing.findUpvalue(name); idx != -1 {
+		return c.addUpvalue(isLocalFalse, idx)
+	}
+
+	return -1
+}
+
+func (c *Compiler) resolveNonmodule(name *token.Token) symbol {
+	symbol := symbol{ast.SCOPE_LOCAL, -1}
+	symbol.index = c.resolveLocal(*name)
+	if symbol.index != -1 {
+		return symbol
+	}
+	symbol.scope = ast.SCOPE_UPVALUE
+	symbol.index = c.findUpvalue(name)
+	return symbol
+}
+
+func (c *Compiler) loadVariable(symbol symbol) {
+	switch symbol.scope {
+	case ast.SCOPE_GLOBAL:
+		c.emitOpArgs(opcode.OP_GET_GLOBAL, byte(symbol.index))
+	case ast.SCOPE_LOCAL:
+		c.emitOpArgs(opcode.OP_GET_LOCAL, byte(symbol.index))
+	case ast.SCOPE_UPVALUE:
+		c.emitOpArgs(opcode.OP_GET_UPVALUE, byte(symbol.index))
+	default:
+		panic("unreachable")
+	}
+}
+
+func (c *Compiler) bareName(symbol symbol, expr ast.Expr) {
+	if expr != nil {
+		c.compileExpr(expr)
+		switch symbol.scope {
+		case ast.SCOPE_LOCAL:
+			c.emitOpArgs(opcode.OP_SET_LOCAL, byte(symbol.index))
+		case ast.SCOPE_UPVALUE:
+			c.emitOpArgs(opcode.OP_SET_UPVALUE, byte(symbol.index))
+		case ast.SCOPE_GLOBAL:
+			c.emitOpArgs(opcode.OP_SET_GLOBAL, byte(symbol.index))
+		}
+		return
+	}
+	c.loadVariable(symbol)
+}
+
+func (c *Compiler) compileFunc(stmt *ast.FnStmt) {
+	compiler := NewCompiler(c, stmt.Kind, c.globals, c.globalsTable)
+	c = compiler
+	c.beginScope()
+	c.fun.Name = value.String(stmt.Name.Lexeme)
+	c.fun.Arity = len(stmt.Params)
+
+	for _, param := range stmt.Params {
+		const_ := c.declareVar(param)
+		c.defineVar(const_)
+	}
+
+	// compile body
+	for _, s := range stmt.Body {
+		c.compileStmt(s)
+	}
+
+	enclosing, fun := c.endCompiler()
+	c = enclosing
+	c.emitOpArgs(opcode.OP_CLOSURE, c.mkConst(fun))
+
+	for _, upv := range c.upvalues {
+		c.emitBytes(upv.isLocal, upv.index)
+	}
 }
 
 func (c *Compiler) compileStmt(stmt ast.Stmt) {
@@ -267,7 +403,9 @@ func (c *Compiler) compileStmt(stmt ast.Stmt) {
 		c.emitPOP()
 	case *ast.FnStmt:
 		c.tok = s.Name
-		panic(fmt.Sprintf("compileStmt not implemented for '%T'", s))
+		symbol := c.declareVar(s.Name)
+		c.compileFunc(s)
+		c.defineVar(symbol)
 	case *ast.IfStmt:
 		c.tok = s.Keyword
 		c.compileExpr(s.Cond)
@@ -304,7 +442,13 @@ func (c *Compiler) compileStmt(stmt ast.Stmt) {
 		}
 	case *ast.VarStmt:
 		c.tok = s.Name
-		panic(fmt.Sprintf("compileStmt not implemented for '%T'", s))
+		if s.Initializer == nil {
+			c.emitOp(opcode.OP_NIL)
+		} else {
+			c.compileExpr(s.Initializer)
+		}
+		symbolIndex := c.declareVar(s.Name)
+		c.defineVar(symbolIndex)
 	case *ast.WhileStmt:
 		c.tok = s.Keyword
 		loopStart := len(c.curChunk().Code)
@@ -332,7 +476,23 @@ func (c *Compiler) compileExpr(expr ast.Expr) {
 		c.emitOpArgs(opcode.OP_ARRAY, byte(len(e.Elements)))
 	case *ast.AssignExpr:
 		c.tok = e.Name
-		panic(fmt.Sprintf("compileExpr not implemented for '%T'", e))
+		symbol := c.resolveNonmodule(e.Name)
+		if symbol.index != -1 {
+			// locals or upvalues
+			c.bareName(symbol, e.Value)
+			return
+		}
+		// globals
+		symbol.scope = ast.SCOPE_GLOBAL
+		idx, ok := c.globalsTable[e.Name.Lexeme]
+		if !ok {
+			c.globals = append(c.globals, value.Null{})
+			symbol.index = len(c.globals) - 1
+		} else {
+			symbol.index = idx
+		}
+		c.bareName(symbol, e.Value)
+		// panic(fmt.Sprintf("compileExpr not implemented for '%T'", e))
 	case *ast.BinaryExpr:
 		c.compileExpr(e.Left)
 		c.tok = e.Operator
@@ -393,7 +553,7 @@ func (c *Compiler) compileExpr(expr ast.Expr) {
 		c.emitOpArgs(opcode.OP_HASH, byte(len(e.Pairs)))
 	case *ast.LambdaExpr:
 		c.tok = e.Name
-		panic(fmt.Sprintf("compileExpr not implemented for '%T'", e))
+		c.compileFunc(e.FnStmt)
 	case *ast.Literal:
 		switch v := e.Value.(type) {
 		case float64:
@@ -448,6 +608,7 @@ func (c *Compiler) compileExpr(expr ast.Expr) {
 		panic(fmt.Sprintf("compileExpr not implemented for '%T'", e))
 	case *ast.ThisExpr:
 		c.tok = e.Keyword
+		// c.loadVariable(c.resolveNonmodule(e.Keyword))
 		panic(fmt.Sprintf("compileExpr not implemented for '%T'", e))
 	case *ast.UnaryExpr:
 		c.tok = e.Operator
@@ -460,9 +621,24 @@ func (c *Compiler) compileExpr(expr ast.Expr) {
 		default:
 			return // unreachable
 		}
-	case *ast.VariableExpr:
+	case *ast.IdentExpr:
 		c.tok = e.Name
-		panic(fmt.Sprintf("compileExpr not implemented for '%T'", e))
+		symbol := c.resolveNonmodule(e.Name)
+		if symbol.index != -1 {
+			// locals or upvalues
+			c.bareName(symbol, nil)
+			return
+		}
+		// globals
+		symbol.scope = ast.SCOPE_GLOBAL
+		idx, ok := c.globalsTable[e.Name.Lexeme]
+		if !ok {
+			c.globals = append(c.globals, value.Null{})
+			symbol.index = len(c.globals) - 1
+		} else {
+			symbol.index = idx
+		}
+		c.bareName(symbol, nil)
 	default:
 		panic(fmt.Sprintf("compileExpr not implemented for '%T'", e))
 	}

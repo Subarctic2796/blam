@@ -216,11 +216,11 @@ func (e *UnaryExpr) String() string {
 	return fmt.Sprintf("(%s %s)", e.Operator.Lexeme, e.Right)
 }
 
-type VariableExpr struct {
+type IdentExpr struct {
 	Name *token.Token
 }
 
-func (e *VariableExpr) String() string { return e.Name.Lexeme }
+func (e *IdentExpr) String() string { return e.Name.Lexeme }
 
 type Stmt interface {
 	String() string
@@ -243,7 +243,7 @@ func (s *BlockStmt) String() string {
 
 type ClassStmt struct {
 	Name       *token.Token
-	Superclass *VariableExpr
+	Superclass *IdentExpr
 	Methods    []*FnStmt
 }
 

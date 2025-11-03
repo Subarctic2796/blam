@@ -240,7 +240,7 @@ func (p *Parser) classDecl() (ast.Stmt, error) {
 	p.declare(name)
 	p.define(name)
 
-	var supercls *ast.VariableExpr
+	var supercls *ast.IdentExpr
 	// TODO: we are currently using '<' for the 'extends' keyword
 	// change it?
 	if p.match(token.LT) {
@@ -249,7 +249,7 @@ func (p *Parser) classDecl() (ast.Stmt, error) {
 			return nil, err
 		}
 
-		supercls = &ast.VariableExpr{Name: p.previous()}
+		supercls = &ast.IdentExpr{Name: p.previous()}
 		if supercls.Name.Lexeme == name.Lexeme {
 			// report error only don't bail
 			p.reportErr(supercls.Name, "A class can't inherit from itself")
@@ -710,7 +710,7 @@ func (p *Parser) assignment() (ast.Expr, error) {
 		}
 
 		switch e := expr.(type) {
-		case *ast.VariableExpr:
+		case *ast.IdentExpr:
 			return &ast.AssignExpr{Name: e.Name, Value: val}, nil
 		case *ast.GetExpr:
 			return &ast.SetExpr{
@@ -1017,7 +1017,7 @@ func (p *Parser) primary() (ast.Expr, error) {
 				p.reportErr(name, "Can't read local variable in its own initializer")
 			}
 		}
-		return &ast.VariableExpr{Name: name}, nil
+		return &ast.IdentExpr{Name: name}, nil
 	} else if p.match(token.LPAREN) {
 		expr, err := p.expression()
 		if err != nil {

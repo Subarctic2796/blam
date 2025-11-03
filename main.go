@@ -9,6 +9,7 @@ import (
 	"github.com/Subarctic2796/blam/compiler"
 	"github.com/Subarctic2796/blam/lexer"
 	"github.com/Subarctic2796/blam/parser"
+	"github.com/Subarctic2796/blam/value"
 )
 
 func main() {
@@ -31,6 +32,8 @@ func repl() {
 	scnr := bufio.NewScanner(os.Stdin)
 	lex := lexer.NewLexer("")
 	parser := parser.NewParser(nil)
+	globals := make([]value.Value, 0)
+	globalsTable := make(map[string]int)
 
 	for {
 		fmt.Print(">> ")
@@ -58,7 +61,7 @@ func repl() {
 		}
 
 		// compile to bytecode
-		compiler := compiler.NewCompiler(nil, ast.FN_SCRIPT, nil, nil)
+		compiler := compiler.NewCompiler(nil, ast.FN_SCRIPT, globals, globalsTable)
 		fn, err := compiler.Compile(stmts)
 		if err != nil {
 			continue

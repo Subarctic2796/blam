@@ -125,13 +125,17 @@ func DisassembleInst(c *Chunk, offset int) int {
 		return offset + 2
 	case opcode.OP_CONSTANT, // constantInst
 		opcode.OP_DEFINE_GLOBAL,
-		opcode.OP_GET_GLOBAL, opcode.OP_SET_GLOBAL,
+		/*opcode.OP_GET_GLOBAL,*/ opcode.OP_SET_GLOBAL,
 		opcode.OP_GET_PROPERTY, opcode.OP_SET_PROPERTY,
 		opcode.OP_GET_SUPER,
 		opcode.OP_CLASS,
 		opcode.OP_METHOD:
 		idx := c.Code[offset+1]
 		fmt.Fprintf(os.Stderr, "%-16s %4d '%s'\n", inst, idx, c.Constants[idx])
+		return offset + 2
+	case opcode.OP_GET_GLOBAL:
+		idx := c.Code[offset+1]
+		fmt.Fprintf(os.Stderr, "%-16s %4d\n", inst, idx)
 		return offset + 2
 	case opcode.OP_NIL, opcode.OP_FALSE, opcode.OP_TRUE, // simpleInst
 		opcode.OP_EQUAL, opcode.OP_NOT_EQUAL,

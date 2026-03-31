@@ -10,6 +10,7 @@ import (
 	"github.com/Subarctic2796/blam/lexer"
 	"github.com/Subarctic2796/blam/parser"
 	"github.com/Subarctic2796/blam/value"
+	"github.com/Subarctic2796/blam/vm"
 )
 
 func main() {
@@ -34,6 +35,7 @@ func repl() {
 	parser := parser.NewParser(nil)
 	globals := make([]value.Value, 0)
 	globalsTable := make(map[string]int)
+	vm := vm.NewVM(globals, globalsTable)
 
 	for {
 		fmt.Print(">> ")
@@ -43,7 +45,11 @@ func repl() {
 		}
 
 		// tokenize input
-		lex.Reset(scnr.Text())
+		line := scnr.Text()
+		if len(line) == 0 {
+			continue
+		}
+		lex.Reset(line)
 		tokens, err := lex.ScanTokens()
 		if err != nil {
 			continue
@@ -67,7 +73,8 @@ func repl() {
 			continue
 		}
 
-		fmt.Println(fn)
+		fmt.Println(vm.GlobalsTable)
+		_ = vm.Interpret(fn)
 	}
 }
 

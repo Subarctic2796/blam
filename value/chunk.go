@@ -51,7 +51,7 @@ func (c *Chunk) AddConst(value Value) int {
 
 // used to get the line for an instruction
 // in the rle encoded lines
-func (c *Chunk) getLine(inst int) int {
+func (c *Chunk) GetLine(inst int) int {
 	start, end, length := 0, len(c.Lines)-1, len(c.Lines)-1
 
 	for {
@@ -78,8 +78,8 @@ func DisassembleChunk(c *Chunk, name string) {
 // disassembles a single instruction
 func DisassembleInst(c *Chunk, offset int) int {
 	fmt.Fprintf(os.Stderr, "%04d ", offset)
-	line := c.getLine(offset)
-	if offset > 0 && line == c.getLine(offset-1) {
+	line := c.GetLine(offset)
+	if offset > 0 && line == c.GetLine(offset-1) {
 		fmt.Fprintf(os.Stderr, "   | ")
 	} else {
 		fmt.Fprintf(os.Stderr, "%4d ", line)
@@ -116,7 +116,8 @@ func DisassembleInst(c *Chunk, offset int) int {
 		}
 		fmt.Fprintf(os.Stderr, "%-16s %4d -> %d\n", inst, offset, offset+3+jmp)
 		return offset + 3
-	case opcode.OP_GET_LOCAL, opcode.OP_SET_LOCAL, // byteInst
+	case opcode.OP_GET_GLOBAL, opcode.OP_SET_GLOBAL,
+		opcode.OP_GET_LOCAL, opcode.OP_SET_LOCAL, // byteInst
 		opcode.OP_GET_UPVALUE, opcode.OP_SET_UPVALUE,
 		opcode.OP_ARRAY, opcode.OP_HASH,
 		opcode.OP_CALL:
@@ -125,17 +126,12 @@ func DisassembleInst(c *Chunk, offset int) int {
 		return offset + 2
 	case opcode.OP_CONSTANT, // constantInst
 		opcode.OP_DEFINE_GLOBAL,
-		/*opcode.OP_GET_GLOBAL,*/ opcode.OP_SET_GLOBAL,
 		opcode.OP_GET_PROPERTY, opcode.OP_SET_PROPERTY,
 		opcode.OP_GET_SUPER,
 		opcode.OP_CLASS,
 		opcode.OP_METHOD:
 		idx := c.Code[offset+1]
 		fmt.Fprintf(os.Stderr, "%-16s %4d '%s'\n", inst, idx, c.Constants[idx])
-		return offset + 2
-	case opcode.OP_GET_GLOBAL:
-		idx := c.Code[offset+1]
-		fmt.Fprintf(os.Stderr, "%-16s %4d\n", inst, idx)
 		return offset + 2
 	case opcode.OP_NIL, opcode.OP_FALSE, opcode.OP_TRUE, // simpleInst
 		opcode.OP_EQUAL, opcode.OP_NOT_EQUAL,

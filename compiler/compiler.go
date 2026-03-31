@@ -86,7 +86,7 @@ func NewCompiler(enclosing *Compiler, ft ast.FnType, globals []value.Value, glob
 		fun:            value.NewObjFn(),
 		ftype:          ft,
 		localCnt:       1,
-		scopeDepth:     0,
+		scopeDepth:     -1,
 		upvalues:       make([]upvalue, 0, _MAX_UPVALUES),
 		constantTable:  make(map[value.Value]int),
 		globals:        globals,
@@ -95,7 +95,7 @@ func NewCompiler(enclosing *Compiler, ft ast.FnType, globals []value.Value, glob
 		curErr:         curErr,
 	}
 
-	// the script doesn't have a name
+	// the script doesn't have a name so call it '<script>'
 	if ft == ast.FN_SCRIPT {
 		c.fun.Name = ""
 	}
@@ -277,7 +277,7 @@ func (c *Compiler) declareVar(name *token.Token) int {
 			return idx
 		}
 		// need to add it
-		c.globals = append(c.globals, value.Null{})
+		c.globals = append(c.globals, value.Undefined{})
 		c.globalsTable[name.Lexeme] = len(c.globals) - 1
 		return len(c.globals) - 1
 	}
@@ -487,12 +487,12 @@ func (c *Compiler) compileExpr(expr ast.Expr) {
 		idx, ok := c.globalsTable[e.Name.Lexeme]
 		if !ok {
 			c.globals = append(c.globals, value.Null{})
+			c.globalsTable[e.Name.Lexeme] = len(c.globals) - 1
 			symbol.index = len(c.globals) - 1
 		} else {
 			symbol.index = idx
 		}
 		c.bareName(symbol, e.Value)
-		// panic(fmt.Sprintf("compileExpr not implemented for '%T'", e))
 	case *ast.BinaryExpr:
 		c.compileExpr(e.Left)
 		c.tok = e.Operator
@@ -634,6 +634,7 @@ func (c *Compiler) compileExpr(expr ast.Expr) {
 		idx, ok := c.globalsTable[e.Name.Lexeme]
 		if !ok {
 			c.globals = append(c.globals, value.Null{})
+			c.globalsTable[e.Name.Lexeme] = len(c.globals) - 1
 			symbol.index = len(c.globals) - 1
 		} else {
 			symbol.index = idx

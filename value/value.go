@@ -25,6 +25,11 @@ func (Null) String() string { return "nil" }
 func (Null) Type() string   { return "nil" }
 func (Null) Hash()          {}
 
+type Undefined struct{}
+
+func (Undefined) String() string { return "undefined" }
+func (Undefined) Type() string   { return "undefined" }
+
 type Num float64
 
 func (n Num) String() string { return fmt.Sprintf("%g", n) }

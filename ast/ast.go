@@ -49,7 +49,7 @@ func (e *ArrayLiteral) String() string {
 	var sb strings.Builder
 	sb.WriteString("([\n")
 	for _, elm := range e.Elements {
-		sb.WriteString(fmt.Sprintf("    %s,\n", elm))
+		fmt.Fprintf(&sb, "    %s,\n", elm)
 	}
 	sb.WriteString("])")
 	return sb.String()
@@ -136,7 +136,7 @@ func (e *HashLiteral) String() string {
 	var sb strings.Builder
 	sb.WriteString("({\n")
 	for k, v := range e.Pairs {
-		sb.WriteString(fmt.Sprintf("    %s: %s,\n", k, v))
+		fmt.Fprintf(&sb, "    %s: %s,\n", k, v)
 	}
 	sb.WriteString("})")
 	return sb.String()
@@ -249,7 +249,7 @@ type ClassStmt struct {
 
 func (s *ClassStmt) String() string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("(class %s", s.Name.Lexeme))
+	fmt.Fprintf(&sb, "(class %s", s.Name.Lexeme)
 	if s.Superclass != nil {
 		sb.WriteString(" < ")
 		sb.WriteString(s.Superclass.String())
@@ -281,7 +281,7 @@ func (s *FnStmt) String() string {
 	if s.Kind == FN_LAMBDA {
 		sb.WriteString("(fun(")
 	} else {
-		sb.WriteString(fmt.Sprintf("(fun %s(", s.Name.Lexeme))
+		fmt.Fprintf(&sb, "(fun %s(", s.Name.Lexeme)
 	}
 	for _, param := range s.Params {
 		if param != s.Params[0] {

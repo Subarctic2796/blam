@@ -135,6 +135,7 @@ typedef enum {
     STMT_PRINT,
     STMT_VAR,
     STMT_WHILE,
+    STMT_FOR_IN,
 } StmtType;
 
 typedef struct {
@@ -173,6 +174,13 @@ typedef struct {
     Stmt *body;
 } StmtWhile;
 
+typedef struct {
+    Expr *iter;
+    ExprIdent index;
+    ExprIdent name;
+    Stmt *body;
+} StmtForIn;
+
 typedef struct Stmt {
     StmtType type;
     Token token;
@@ -182,6 +190,7 @@ typedef struct Stmt {
         StmtFn fun;
         StmtIf if_;
         StmtWhile while_;
+        StmtForIn forIn;
         Expr *expr;
         Expr *print;
         Expr *value; // control
@@ -197,6 +206,7 @@ typedef struct {
         Expr *print;
         Expr *value;
         Expr *init;
+        Expr *iter;
     };
     Stmt *then;
     union {
@@ -209,7 +219,11 @@ typedef struct {
         Stmts bodyf;
     };
     Tokens params;
-    ExprIdent superClass;
+    union {
+        ExprIdent superClass;
+        ExprIdent index;
+    };
+    ExprIdent name;
 } StmtOpts;
 
 #define newExpr(ty, tk, ...)                                                   \

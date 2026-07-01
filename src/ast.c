@@ -61,6 +61,7 @@ Stmt *newStmtOpts(Arena *a, StmtType type, Token tok, StmtOpts opts) {
     case STMT_EXPR:    ret->as.expr = opts.expr; break;
     case STMT_PRINT:   ret->as.print = opts.print; break;
     case STMT_VAR:     ret->as.init = opts.init; break;
+    case STMT_WHILE:   ret->as.while_ = (StmtWhile){opts.cond, opts.bodyw}; break;
     case STMT_CLASS:
         ret->as.klass = (StmtClass){opts.methods, opts.superClass};
         break;
@@ -70,7 +71,10 @@ Stmt *newStmtOpts(Arena *a, StmtType type, Token tok, StmtOpts opts) {
     case STMT_IF:
         ret->as.if_ = (StmtIf){opts.cond, opts.then, opts.elze};
         break;
-    case STMT_WHILE: ret->as.while_ = (StmtWhile){opts.cond, opts.bodyw}; break;
+    case STMT_FOR_IN:
+        ret->as.forIn =
+            (StmtForIn){opts.iter, opts.index, opts.name, opts.bodyw};
+        break;
     }
     return ret;
 }
@@ -286,6 +290,11 @@ void printStmt(const Stmt *stmt) {
         putchar(' ');
         printStmt(while_.body);
         putchar(')');
+    } break;
+    case STMT_FOR_IN: {
+        StmtForIn forIn = stmt->as.forIn;
+        UNUSED(forIn);
+        TODO("for in stmt");
     } break;
     }
 }

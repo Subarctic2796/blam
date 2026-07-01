@@ -13,7 +13,7 @@ typedef enum {
 
 typedef enum {
     PREC_NONE,
-    PREC_ASSIGNMENT, // =
+    PREC_ASSIGNMENT, // =, +=, -=, *=, /= , *=
     PREC_OR,         // or
     PREC_AND,        // and
     PREC_EQUALITY,   // == !=
@@ -103,12 +103,13 @@ static void advance(Parser *p) {
     }
 }
 
-static inline void consume(Parser *p, TokenType t, const char *msg) {
+static inline Token consume(Parser *p, TokenType t, const char *msg) {
     if (p->cur.type == t) {
         advance(p);
-        return;
+        return p->prv;
     }
     errorAtCur(p, msg);
+    return (Token){0};
 }
 
 static inline void consumeSemiColon(Parser *p, const char *msg) {
@@ -171,7 +172,7 @@ static const TokenType EQS[] = {
 // -----------
 
 static inline Expr *expression(Parser *p);
-static inline ParseRule *getRule(TokenType t);
+static inline const ParseRule *getRule(TokenType t);
 static Stmt *statement(Parser *p);
 static Stmt *declaration(Parser *p);
 static Stmts block(Parser *p);
@@ -326,7 +327,7 @@ static Expr *desugarOp(Parser *p, Expr *lhs, Token opr, Expr *value) {
     case TOKEN_EQ:         return value;
     case TOKEN_PLUS_EQ:    oprType = TOKEN_PLUS; break;
     case TOKEN_MINUS_EQ:   oprType = TOKEN_MINUS; break;
-    case TOKEN_SLASH_EQ:   oprType = TOKEN_SLASH_EQ; break;
+    case TOKEN_SLASH_EQ:   oprType = TOKEN_SLASH; break;
     case TOKEN_STAR_EQ:    oprType = TOKEN_STAR; break;
     case TOKEN_PERCENT_EQ: oprType = TOKEN_PERCENT; break;
     default:               UNREACHABLE("operator is not = or [*]="); break;
@@ -354,8 +355,7 @@ static Expr *subscript(Parser *p, bool canAssign, Expr *lhs) {
 }
 
 static Expr *dot(Parser *p, bool canAssign, Expr *lhs) {
-    consume(p, TOKEN_IDENTIFIER, "Expect property name after '.'");
-    Token name = p->prv;
+    Token name = consume(p, TOKEN_IDENTIFIER, "Expect property name after '.'");
 
     if (canAssign && matchAny(p, EQS_LEN, EQS)) {
         Token opr = p->prv;
@@ -419,7 +419,7 @@ static Expr *or_(Parser *p, bool canAssign, Expr *lhs) {
     return newExpr(EXPR_LOGICAL, opr, .lhs = lhs, .rhs = rhs);
 }
 
-static ParseRule RULES[] = {
+static const ParseRule RULES[] = {
     {grouping, call, PREC_CALL},         // TOKEN_LPAREN
     {NULL, NULL, PREC_NONE},             // TOKEN_RPAREN
     {map, NULL, PREC_NONE},              // TOKEN_LBRACE
@@ -477,7 +477,7 @@ static ParseRule RULES[] = {
 static_assert(ARRAY_LEN(RULES) == __TOKEN_CNT,
               "number of rules != number of tokens");
 
-static inline ParseRule *getRule(TokenType t) { return &RULES[t]; }
+static inline const ParseRule *getRule(TokenType t) { return &RULES[t]; }
 
 static Expr *parsePrecedence(Parser *p, Precedence prec) {
     advance(p);
@@ -548,11 +548,10 @@ static Stmt *function(Parser *p, FnType type) {
 }
 
 static Stmt *method(Parser *p) {
-    consume(p, TOKEN_IDENTIFIER, "Expect method name");
-    Token name = p->prv;
+    Token name = consume(p, TOKEN_IDENTIFIER, "Expect method name");
 
     FnType type = FN_METHOD;
-    if (p->prv.cnt == 4 && stringsEqual(name.lexeme, svLit("init"))) {
+    if (name.cnt == 4 && stringsEqual(name.lexeme, svLit("init"))) {
         type = FN_INIT;
     }
     return function(p, type);
@@ -562,14 +561,13 @@ static Stmt *classDecl(Parser *p) {
     ClassType prvCLS = p->curCLS;
     p->curCLS = CLS_CLASS;
 
-    consume(p, TOKEN_IDENTIFIER, "Expect class name");
-    Token name = p->prv;
+    Token name = consume(p, TOKEN_IDENTIFIER, "Expect class name");
 
     ExprIdent supercls = {0};
     if (match(p, TOKEN_LT)) {
-        consume(p, TOKEN_IDENTIFIER, "Expect superclass name");
+        Token tok = consume(p, TOKEN_IDENTIFIER, "Expect superclass name");
 
-        supercls = (ExprIdent){p->scopeDepth, -1, p->prv};
+        supercls = (ExprIdent){p->scopeDepth, -1, tok};
         if (stringsEqual(supercls.name.lexeme, name.lexeme)) {
             error(p, "A class can't inherit from itself");
         }
@@ -595,8 +593,7 @@ static Stmt *classDecl(Parser *p) {
 static Stmt *funDecl(Parser *p) { return function(p, FN_FUNC); }
 
 static Stmt *varDecl(Parser *p) {
-    consume(p, TOKEN_IDENTIFIER, "Expect variable name");
-    Token name = p->prv;
+    Token name = consume(p, TOKEN_IDENTIFIER, "Expect variable name");
 
     Expr *init = NULL;
     if (match(p, TOKEN_EQ)) init = expression(p);
@@ -623,9 +620,35 @@ static Stmt *declaration(Parser *p) {
 }
 
 static Stmt *forIterStmt(Parser *p) {
-    UNUSED(p);
-    TODO("");
-    return NULL;
+    if (!match(p, TOKEN_VAR)) return NULL;
+    if (!match(p, TOKEN_IDENTIFIER)) return NULL;
+
+    Token first = p->prv;
+
+    static const TokenType TYPES[] = {TOKEN_COMMA, TOKEN_IN};
+    if (!matchAny(p, 2, TYPES)) return NULL;
+
+    // now know for sure that it is a for in stmt
+    ExprIdent index = {p->scopeDepth, -1, {0}};
+    ExprIdent name = {p->scopeDepth, -1, first};
+    if (p->prv.type == TOKEN_COMMA) {
+        name.name =
+            consume(p, TOKEN_IDENTIFIER,
+                    "Expected a second variable name after ',' in for loop");
+        index.name = first;
+
+        consume(p, TOKEN_IN, "Expect 'in' after variable name in for loop");
+    }
+
+    Expr *iter = expression(p);
+    consume(p, TOKEN_RPAREN, "Expect ')' after for loop");
+
+    p->loopDepth++;
+    Stmt *body = statement(p);
+    p->loopDepth--;
+
+    return newStmt(STMT_FOR_IN, ((Token){0}), .iter = iter, .index = index,
+                   .name = name, .bodyw = body);
 }
 
 static Stmt *forStmt(Parser *p) {

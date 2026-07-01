@@ -1,6 +1,7 @@
 #ifndef INCLUDE_SRC_AST_H_
 #define INCLUDE_SRC_AST_H_
 
+#include "arena.h"
 #include "common.h"
 #include "token.h"
 
@@ -34,8 +35,9 @@ typedef struct {
 } Exprs;
 
 typedef struct {
-    Token oper;
+    int scope, index;
     Expr *value;
+    Token oper;
 } ExprAssign;
 
 typedef struct {
@@ -72,9 +74,6 @@ typedef struct {
     Token name;
 } ExprIdent;
 
-typedef struct StmtFn StmtFn;
-typedef struct StmtIf StmtIf;
-
 typedef struct Expr {
     ExprType type;
     Token token;
@@ -87,7 +86,7 @@ typedef struct Expr {
         ExprIndexedGet indexedGet;
         ExprIndexedSet indexedSet;
         Expr *get;
-        Expr *grouping;
+        Expr *group;
         Stmt *lambda; // StmtFn
         Stmt *if_;    // StmtIf
         ExprSet set;
@@ -98,6 +97,32 @@ typedef struct Expr {
 } Expr;
 
 typedef struct {
+    int scope, idx;
+    union {
+        Expr *lhs;
+        Expr *object;
+        Expr *callee;
+        Expr *get;
+        Expr *group;
+    };
+    union {
+        Expr *rhs;
+        Expr *index;
+    };
+    Expr *value;
+    union {
+        Stmt *lambda;
+        Stmt *if_;
+    };
+    union {
+        Token name;
+        Token opr;
+        Token method;
+    };
+    union {
+        Exprs elements;
+        Exprs args;
+    };
 } ExprOpts;
 
 typedef enum {
@@ -123,6 +148,7 @@ typedef struct {
 } StmtClass;
 
 typedef enum {
+    FN_NONE,
     FN_FUNC,
     FN_LAMBDA,
     FN_INIT,
@@ -153,35 +179,48 @@ typedef struct Stmt {
     union {
         Stmts block;
         StmtClass klass;
-        Expr *expr;
         StmtFn fun;
         StmtIf if_;
+        StmtWhile while_;
+        Expr *expr;
         Expr *print;
         Expr *value; // control
         Expr *init;  // var
-        StmtWhile while_;
     } as;
 } Stmt;
 
 typedef struct {
+    FnType fnType;
+    union {
+        Expr *cond;
+        Expr *expr;
+        Expr *print;
+        Expr *value;
+        Expr *init;
+    };
+    Stmt *then;
+    union {
+        Stmt *elze;
+        Stmt *bodyw;
+    };
+    union {
+        Stmts block;
+        Stmts methods;
+        Stmts bodyf;
+    };
+    Tokens params;
+    ExprIdent superClass;
 } StmtOpts;
 
-#define newExpr(t, ...) newExprOpts(t, (ExprOpts){__VA_ARGS__})
-Expr *newExprOpts(ExprType, ExprOpts opts);
+#define newExpr(ty, tk, ...)                                                   \
+    newExprOpts(&p->arena, ty, tk, (ExprOpts){__VA_ARGS__})
+Expr *newExprOpts(Arena *a, ExprType type, Token tok, ExprOpts opts);
 
-#define newStmt(t, ...) newStmtOpts(t, (StmtOpts){__VA_ARGS__})
-Stmt *newStmtOpts(StmtType, StmtOpts opts);
+#define newStmt(ty, tk, ...)                                                   \
+    newStmtOpts(&p->arena, ty, tk, (StmtOpts){__VA_ARGS__})
+Stmt *newStmtOpts(Arena *a, StmtType type, Token tok, StmtOpts opts);
 
 void printExpr(const Expr *expr);
-void freeExpr(Expr *expr);
-
-void clearExprs(Exprs *exprs);
-void freeExprs(Exprs *exprs);
-
 void printStmt(const Stmt *stmt);
-void freeStmt(Stmt *stmt);
-
-void clearStmts(Stmts *stmts);
-void freeStmts(Stmts *stmts);
 
 #endif // INCLUDE_SRC_AST_H_

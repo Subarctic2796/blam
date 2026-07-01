@@ -5,20 +5,13 @@
 #include "common.h"
 #include "token.h"
 
-typedef struct {
-    const char *start;
-    const char *cur;
-    size_t line;
-} Lexer;
+#define PARSER_SIZE 112
 
-typedef struct {
-    bool hadErr;
-    Lexer lexer;
-} Parser;
+typedef struct Parser Parser;
 
+void initParser(Parser *p);
 void resetParser(Parser *p, const char *src);
-Token scanToken(Parser *p);
-
+void freeParser(Parser *p);
 bool parse(Parser *p, Stmts *stmts);
 
 #endif // INCLUDE_SRC_PARSER_H_

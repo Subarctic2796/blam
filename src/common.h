@@ -39,19 +39,19 @@
 
 #define DA_INIT_CAP 16
 
+#define GROW_CAP(cap) ((cap) < DA_INIT_CAP ? DA_INIT_CAP : (cap) * 2)
+
 #define da_free(da) DA_FREE((da).items)
 
 #define da_reserve(da, expected_capacity)                                      \
     do {                                                                       \
         if ((expected_capacity) > (da)->cap) {                                 \
-            if ((da)->cap < DA_INIT_CAP) {                                     \
-                (da)->cap = DA_INIT_CAP;                                       \
-            }                                                                  \
+            if ((da)->cap < DA_INIT_CAP) (da)->cap = DA_INIT_CAP;              \
             while ((expected_capacity) > (da)->cap) {                          \
                 (da)->cap *= 2;                                                \
             }                                                                  \
-            (da)->items = ((da)->items)DA_REALLOC(                             \
-                (da)->items, (da)->cap * sizeof(*(da)->items));                \
+            (da)->items =                                                      \
+                DA_REALLOC((da)->items, (da)->cap * sizeof(*(da)->items));     \
             assert((da)->items != NULL && "Buy more RAM lol");                 \
         }                                                                      \
     } while (0)
@@ -73,6 +73,8 @@
     } while (0)
 
 #define free_string(s) free((void *)(s).items)
+
+#define HASH_TYPES_MAX_LOAD 0.75
 
 // need to free
 typedef struct {
@@ -282,7 +284,8 @@ API stringView svTrim(stringView s) { return svTrimLeft(svTrimRight(s)); }
 API string readFile(const char *path) {
     FILE *f = fopen(path, "r");
     if (f == NULL) {
-        return (string){NULL, 0};
+        fprintf(stderr, "could not open '%s'\n", path);
+        exit(74);
     }
 
     fseek(f, 0L, SEEK_END);

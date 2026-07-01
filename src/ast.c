@@ -104,6 +104,7 @@ void printExpr(const Expr *expr) {
         ExprBinary bin = expr->as.binary;
         printf("(%.*s ", (int)tok.cnt, tok.items);
         printExpr(bin.lhs);
+        putchar(' ');
         printExpr(bin.rhs);
         putchar(')');
     } break;
@@ -191,13 +192,14 @@ void printStmt(const Stmt *stmt) {
         printf("(block ");
         for (size_t i = 0; i < block.cnt; i++) {
             printStmt(block.items[i]);
+            if (i != block.cnt - 1) putchar(' ');
         }
         putchar(')');
     } break;
     case STMT_CLASS: {
         StmtClass klass = stmt->as.klass;
         printf("(class %.*s", (int)tok.cnt, tok.items);
-        if (klass.superClass.index != -1) {
+        if (klass.superClass.name.items != NULL) {
             Token name = klass.superClass.name;
             printf(" < %.*s", (int)name.cnt, name.items);
         }
@@ -293,8 +295,17 @@ void printStmt(const Stmt *stmt) {
     } break;
     case STMT_FOR_IN: {
         StmtForIn forIn = stmt->as.forIn;
-        UNUSED(forIn);
-        TODO("for in stmt");
+        ExprIdent index = forIn.index;
+        ExprIdent name = forIn.name;
+        printf("(for-in ");
+        if (index.name.items != NULL) {
+            printf("%.*s ", (int)index.name.cnt, index.name.items);
+        }
+        printf("%.*s ", (int)name.name.cnt, name.name.items);
+        printExpr(forIn.iter);
+        putchar(' ');
+        printStmt(forIn.body);
+        putchar(')');
     } break;
     }
 }

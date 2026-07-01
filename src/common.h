@@ -34,8 +34,14 @@
     } while (0)
 
 #define ARRAY_LEN(array) (sizeof(array) / sizeof(array[0]))
-#define DA_FREE          free
-#define DA_REALLOC       realloc
+
+#ifndef DA_FREE
+#define DA_FREE free
+#endif
+
+#ifndef DA_REALLOC
+#define DA_REALLOC realloc
+#endif
 
 #define DA_INIT_CAP 16
 
@@ -212,7 +218,7 @@ API int sbAppendf(stringBuilder *sb, const char *fmt, ...) {
             sb->cap *= 2;
         }
 
-        sb->items = (char *)realloc(sb->items, sb->cap * sizeof(*sb->items));
+        sb->items = (char *)DA_REALLOC(sb->items, sb->cap * sizeof(*sb->items));
         if (sb->items == NULL) {
             printf("oh no not enough memory");
             exit(1);
@@ -243,8 +249,8 @@ API void svSplitCharToBuf(stringViews *buf, const stringView s,
             while (buf->cnt + 1 > buf->cap) {
                 buf->cap *= 2;
             }
-            buf->items = (stringView *)realloc(buf->items,
-                                               buf->cap * sizeof(*buf->items));
+            buf->items = (stringView *)DA_REALLOC(
+                buf->items, buf->cap * sizeof(*buf->items));
             assert(buf->items != NULL && "Buy more RAM lol");
         }
 

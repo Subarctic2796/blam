@@ -15,6 +15,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define MAX_UPVALUES 256
+#define MAX_LOCALS   256
+
 #define API
 
 #define UNUSED(arg) ((void)arg)
@@ -22,7 +25,7 @@
 #define TODO(message)                                                          \
     do {                                                                       \
         fprintf(stderr, "[%s:%d] in %s() TODO: %s\n", __FILE__, __LINE__,      \
-                __func__, message);                                            \
+                __func__, strlen(message) == 0 ? __func__ : message);          \
         abort();                                                               \
     } while (0)
 

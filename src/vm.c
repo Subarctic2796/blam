@@ -1,30 +1,30 @@
 #include "vm.h"
 #include "common.h"
+#include "compiler.h"
 #include "parser.h"
-#include "resolver.h"
 
-// void initVM(VM *vm, Parser *parser, Resolver *resolver, Compiler *compiler) {
-void initVM(VM *vm, Parser *parser, Resolver *resolver, void *compiler) {
+void initVM(VM *vm, Parser *parser, Compiler *compiler) {
+    *vm = (VM){0};
+
     initParser(parser);
-    initResolver(resolver);
-    // initCompiler(compiler);
-    *vm = (VM){parser, resolver, compiler};
+    initCompiler(compiler);
+
+    vm->parser = parser;
+    vm->compiler = compiler;
 }
 
 void freeVM(VM *vm) {
     freeParser(vm->parser);
-    freeResolver(vm->resolver);
+    // freeCompiler(vm->compiler);
     TODO("");
 }
 
-InterpretResult interpret(VM *vm, const char *src, Stmts *stmts) {
-    resetParser(vm->parser, src);
-    if (!parse(vm->parser, stmts)) return INTERPRET_COMPILE_ERR;
+InterpretResult interpret(VM *vm, const char *src) {
+    static Stmts stmts = {0};
+    if (!parse(vm, vm->parser, src, &stmts)) return INTERPRET_COMPILE_ERR;
 
-    resetResolver(vm->resolver);
-    if (!resolve(vm->resolver, stmts)) return INTERPRET_COMPILE_ERR;
-    for (size_t i = 0; i < stmts->cnt; i++) {
-        printStmt(stmts->items[i]);
+    for (size_t i = 0; i < stmts.cnt; i++) {
+        printStmt(stmts.items[i]);
         puts("");
     }
 

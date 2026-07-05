@@ -1,8 +1,9 @@
 #ifndef INCLUDE_SRC_VM_H_
 #define INCLUDE_SRC_VM_H_
 
+#include "compiler.h"
 #include "parser.h"
-#include "resolver.h"
+#include "value.h"
 
 typedef enum {
     INTERPRET_OK,
@@ -10,16 +11,20 @@ typedef enum {
     INTERPRET_RUNTIME_ERR,
 } InterpretResult;
 
-typedef struct {
+typedef struct VM {
     Parser *parser;
-    Resolver *resolver;
     // Compiler *compiler;
     void *compiler;
+
+    Obj *objects;
+
+    ValueMap strings;
+    ValueMap globalNames;
+    ValueArray globalValues;
 } VM;
 
-// void initVM(VM *vm, Parser *parser, Resolver *resolver, Compiler *compiler);
-void initVM(VM *vm, Parser *parser, Resolver *resolver, void *compiler);
+void initVM(VM *vm, Parser *parser, Compiler *compiler);
 void freeVM(VM *vm);
-InterpretResult interpret(VM *vm, const char *src, Stmts *stmts);
+InterpretResult interpret(VM *vm, const char *src);
 
 #endif // INCLUDE_SRC_VM_H_

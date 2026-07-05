@@ -95,7 +95,7 @@ void arena_trim(Arena *a);
 
 #define arena_da_reserve(a, da, expected_cap)                                  \
     do {                                                                       \
-        size_t new_cap = (da)->cap;                                            \
+        size_t new_cap = (size_t)(da)->cap;                                    \
         if ((expected_cap) > new_cap) {                                        \
             if (new_cap < ARENA_DA_INIT_CAP) new_cap = ARENA_DA_INIT_CAP;      \
             while ((expected_cap) > new_cap) {                                 \

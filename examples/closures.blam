@@ -1,0 +1,33 @@
+fun outer() {
+  var x = "value";
+  fun middle() {
+    fun inner() {
+      print x;
+    }
+
+    print "create inner closure";
+    return inner;
+  }
+
+  print "return from outer";
+  return middle;
+}
+
+print "=== closures ===";
+var mid = outer();
+var in_ = mid();
+in_();
+
+fun outer2() {
+    var x = "value";
+    print "return from outer";
+    return fun() {
+        print "create inner closure";
+        return fun() { print x; };
+    };
+}
+
+print "=== closures using lambdas ===";
+mid = outer2();
+in_ = mid();
+in_();

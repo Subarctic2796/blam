@@ -30,7 +30,8 @@ Expr *newExprOpts(Arena *a, ExprType type, Token tok, ExprOpts opts) {
     case EXPR_IF:      ret->as.if_ = opts.if_; break;
     case EXPR_LAMBDA:  ret->as.lambda = opts.lambda; break;
     case EXPR_IDENT:
-        ret->as.ident = (ExprIdent){opts.scope, opts.idx, opts.name};
+        ret->as.ident =
+            (ExprIdent){opts.scope, opts.isLocal, opts.idx, opts.name};
         break;
     case EXPR_INDEXED_GET:
         ret->as.indexedGet = (ExprIndexedGet){opts.object, opts.index};
@@ -60,7 +61,7 @@ Stmt *newStmtOpts(Arena *a, StmtType type, Token tok, StmtOpts opts) {
     case STMT_CONTROL: ret->as.value = opts.value; break;
     case STMT_EXPR:    ret->as.expr = opts.expr; break;
     case STMT_PRINT:   ret->as.print = opts.print; break;
-    case STMT_VAR:     ret->as.init = opts.init; break;
+    case STMT_VAR:     ret->as.var = (StmtVar){opts.init, opts.name}; break;
     case STMT_WHILE:   ret->as.while_ = (StmtWhile){opts.cond, opts.bodyw}; break;
     case STMT_CLASS:
         ret->as.klass = (StmtClass){opts.methods, opts.superClass};
@@ -88,7 +89,7 @@ void printExpr(const Expr *expr) {
         for (size_t i = 0; i < elems.cnt; i++) {
             printf("    ");
             printExpr(elems.items[i]);
-            putchar(',');
+            puts(",");
         }
         printf("])");
     } break;
@@ -146,8 +147,11 @@ void printExpr(const Expr *expr) {
         printExpr(expr->as.right);
         putchar(')');
     } break;
-    case EXPR_LITERAL:
-    case EXPR_IDENT:       printf("%.*s", (int)tok.cnt, tok.items); break;
+    case EXPR_LITERAL: printf("%.*s", (int)tok.cnt, tok.items); break;
+    case EXPR_IDENT:   {
+        ExprIdent ident = expr->as.ident;
+        printf("%.*s[%s]", (int)tok.cnt, tok.items, ScopeTypeStr(ident.scope));
+    } break;
     case EXPR_THIS:        printf("(this)"); break;
     case EXPR_IF:          printStmt(expr->as.if_); break;
     case EXPR_LAMBDA:      printStmt(expr->as.lambda); break;
@@ -278,10 +282,11 @@ void printStmt(const Stmt *stmt) {
         putchar(')');
     } break;
     case STMT_VAR: {
-        printf("(var %.*s", (int)tok.cnt, tok.items);
-        if (stmt->as.init != NULL) {
+        printf("(var %.*s[%s]", (int)tok.cnt, tok.items,
+               ScopeTypeStr(stmt->as.var.name.scope));
+        if (stmt->as.var.init != NULL) {
             printf(" = ");
-            printExpr(stmt->as.init);
+            printExpr(stmt->as.var.init);
         }
         putchar(')');
     } break;

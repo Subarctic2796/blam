@@ -1,6 +1,10 @@
 #ifndef INCLUDE_SRC_VALUE_H_
 #define INCLUDE_SRC_VALUE_H_
 
+#include "common.h"
+
+typedef struct VM VM;
+
 typedef enum {
     OBJ_BOUND_METHOD,
     OBJ_CLASS,
@@ -45,20 +49,21 @@ typedef struct Obj {
 #define SIGN_BIT ((uint64_t)1 << 63)
 #define QNAN     ((uint64_t)0x7ffc000000000000)
 
-#define TAG_NIL   1 // 001
-#define TAG_FALSE 2 // 010
-#define TAG_TRUE  3 // 011
-#define TAG_EMPTY 4 // 100
-#define TAG_EMPTY 5 // 101
+#define TAG_NIL       1 // 001
+#define TAG_FALSE     2 // 010
+#define TAG_TRUE      3 // 011
+#define TAG_EMPTY     4 // 100
+#define TAG_UNDEFINED 5 // 101
 
 typedef uint64_t Value;
 
 // check lox type is correct c type
-#define IS_BOOL(value)   (((value) | 1) == TRUE_VAL)
-#define IS_NIL(value)    ((value) == NIL_VAL)
-#define IS_EMPTY(value)  ((value) == EMPTY_VAL)
-#define IS_NUMBER(value) (((value) & QNAN) != QNAN)
-#define IS_OBJ(value)    (((value) & (QNAN | SIGN_BIT)) == (QNAN | SIGN_BIT))
+#define IS_BOOL(value)      (((value) | 1) == TRUE_VAL)
+#define IS_NIL(value)       ((value) == NIL_VAL)
+#define IS_EMPTY(value)     ((value) == EMPTY_VAL)
+#define IS_UNDEFINED(value) ((value) == UNDEFINED_VAL)
+#define IS_NUMBER(value)    (((value) & QNAN) != QNAN)
+#define IS_OBJ(value)       (((value) & (QNAN | SIGN_BIT)) == (QNAN | SIGN_BIT))
 
 // lox -> c
 #define AS_BOOL(value)   ((value) == TRUE_VAL)
@@ -71,6 +76,7 @@ typedef uint64_t Value;
 #define TRUE_VAL        ((Value)(uint64_t)(QNAN | TAG_TRUE))
 #define NIL_VAL         ((Value)(uint64_t)(QNAN | TAG_NIL))
 #define EMPTY_VAL       ((Value)(uint64_t)(QNAN | TAG_EMPTY))
+#define UNDEFINED_VAL   ((Value)(uint64_t)(QNAN | TAG_UNDEFINED))
 #define NUMBER_VAL(num) numToValue(num)
 #define OBJ_VAL(obj)    (Value)(SIGN_BIT | QNAN | (uint64_t)(uintptr_t)(obj))
 
@@ -100,30 +106,34 @@ typedef enum {
 typedef struct {
     ValueType type;
     union {
-        bool bool_;
-        double num;
+        bool boolean;
+        double number;
         Obj *obj;
     } as;
 } Value;
 
 // check lox type is correct c type
-#define IS_BOOL(value)    ((value).type == VAL_BOOL)
-#define IS_NIL(value)     ((value).type == VAL_NIL)
-#define IS_EMPTY(value)   ((value).type == VAL_EMPTY)
-#define IS_NUMBER(value)  ((value).type == VAL_NUMBER)
-#define IS_OBJ(value)     ((value).type == VAL_OBJ)
+#define IS_BOOL(value)      ((value).type == VAL_BOOL)
+#define IS_NIL(value)       ((value).type == VAL_NIL)
+#define IS_EMPTY(value)     ((value).type == VAL_EMPTY)
+#define IS_UNDEFINED(value) ((value).type == VAL_UNDEFINED)
+#define IS_NUMBER(value)    ((value).type == VAL_NUMBER)
+#define IS_OBJ(value)       ((value).type == VAL_OBJ)
 
 // lox -> c
-#define AS_OBJ(value)     ((value).as.obj)
-#define AS_BOOL(value)    ((value).as.boolean)
-#define AS_NUMBER(value)  ((value).as.number)
+#define AS_OBJ(value)       ((value).as.obj)
+#define AS_BOOL(value)      ((value).as.boolean)
+#define AS_NUMBER(value)    ((value).as.number)
 
 // c -> lox
-#define BOOL_VAL(value)   ((Value){VAL_BOOL, {.boolean = value}})
-#define NIL_VAL           ((Value){VAL_NIL, {.number = 0}})
-#define EMPTY_VAL         ((Value){VAL_EMPTY, {.number = 0}})
-#define NUMBER_VAL(value) ((Value){VAL_NUMBER, {.number = value}})
-#define OBJ_VAL(object)   ((Value){VAL_OBJ, {.obj = (Obj *)object}})
+#define BOOL_VAL(value)     ((Value){VAL_BOOL, {.boolean = value}})
+#define FALSE_VAL           ((Value){VAL_BOOL, {.boolean = false}})
+#define TRUE_VAL            ((Value){VAL_BOOL, {.boolean = true}})
+#define NIL_VAL             ((Value){VAL_NIL, {.number = 0}})
+#define EMPTY_VAL           ((Value){VAL_EMPTY, {.number = 0}})
+#define UNDEFINED_VAL       ((Value){VAL_UNDEFINED, {.number = 0}})
+#define NUMBER_VAL(value)   ((Value){VAL_NUMBER, {.number = value}})
+#define OBJ_VAL(object)     ((Value){VAL_OBJ, {.obj = (Obj *)object}})
 #endif // NAN_BOXING
 
 #define OBJ_TYPE(value) (AS_OBJ(value)->type)
@@ -153,6 +163,48 @@ typedef struct {
 #define AS_CSTRING(value)      (((ObjString *)AS_OBJ(value))->chars)
 #define AS_ERROR(value)        ((ObjError *)AS_OBJ(value))
 #define AS_ERROR_MSG(value)    (((ObjError *)AS_OBJ(value))->msg->chars)
+
+typedef struct {
+    Value key;
+    Value value;
+} ValueEntry;
+
+typedef struct {
+    int cnt, cap;
+    ValueEntry *items;
+} ValueMap;
+
+typedef struct {
+    int cnt, cap;
+    Value *items;
+} ValueArray;
+
+typedef struct {
+    Obj obj;
+    uint32_t hash;
+    union {
+        struct {
+            const char *items;
+            size_t cnt;
+        };
+        string str;
+    };
+} ObjString;
+
+typedef struct {
+    void *stub;
+} ObjFn;
+
+// used for dynamically allocated items
+ObjString *takeString(VM *vm, char *chars, int length);
+
+// used to extend the lifetime of the string for the vm
+// ie for in the compiler as the tokens are views into the source
+// if its a static string
+ObjString *copyString(VM *vm, const char *chars, int length);
+
+// for string literals
+#define CONST_STRING(txt) copyString(vm, txt, sizeof(txt) - 1)
 
 static inline bool isObjType(Value value, ObjType type) {
     return IS_OBJ(value) && AS_OBJ(value)->type == type;

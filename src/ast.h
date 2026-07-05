@@ -5,6 +5,14 @@
 #include "common.h"
 #include "token.h"
 
+typedef enum {
+    SCOPE_NONE,
+    SCOPE_GLOBAL,
+    SCOPE_LOCAL,
+    SCOPE_UPVALUE,
+    __SCOPE_CNT,
+} ScopeType;
+
 typedef struct Expr Expr;
 typedef struct Stmt Stmt;
 
@@ -35,7 +43,8 @@ typedef struct {
 } Exprs;
 
 typedef struct {
-    int scope, index;
+    ScopeType scope;
+    int index;
     Expr *value;
     Token oper;
 } ExprAssign;
@@ -70,7 +79,9 @@ typedef struct {
 } ExprIndexedSet;
 
 typedef struct {
-    int scope, index;
+    ScopeType scope;
+    bool isLocal;
+    int index;
     Token name;
 } ExprIdent;
 
@@ -97,7 +108,9 @@ typedef struct Expr {
 } Expr;
 
 typedef struct {
-    int scope, idx;
+    ScopeType scope;
+    bool isLocal;
+    int idx;
     union {
         Expr *lhs;
         Expr *object;
@@ -150,11 +163,13 @@ typedef struct {
 
 typedef enum {
     FN_NONE,
+    FN_SCRIPT,
     FN_FUNC,
     FN_LAMBDA,
     FN_INIT,
     FN_METHOD,
     FN_STATIC,
+    __FN_CNT,
 } FnType;
 
 typedef struct StmtFn {
@@ -181,6 +196,11 @@ typedef struct {
     Stmt *body;
 } StmtForIn;
 
+typedef struct {
+    Expr *init;
+    ExprIdent name;
+} StmtVar;
+
 typedef struct Stmt {
     StmtType type;
     Token token;
@@ -191,10 +211,10 @@ typedef struct Stmt {
         StmtIf if_;
         StmtWhile while_;
         StmtForIn forIn;
+        StmtVar var;
         Expr *expr;
         Expr *print;
         Expr *value; // control
-        Expr *init;  // var
     } as;
 } Stmt;
 
@@ -236,5 +256,31 @@ Stmt *newStmtOpts(Arena *a, StmtType type, Token tok, StmtOpts opts);
 
 void printExpr(const Expr *expr);
 void printStmt(const Stmt *stmt);
+
+static inline const char *FnTypeStr(const FnType t) {
+    static const char *strings[] = {
+        "FN_NONE",   // FN_NONE
+        "FN_SCRIPT", // FN_SCRIPT
+        "FN_FUNC",   // FN_FUNC
+        "FN_LAMBDA", // FN_LAMBDA
+        "FN_INIT",   // FN_INIT
+        "FN_METHOD", // FN_METHOD
+        "FN_STATIC", // FN_STATIC
+    };
+    static_assert(ARRAY_LEN(strings) == __FN_CNT, "number of FnTypes changed");
+    return strings[t];
+}
+
+static inline const char *ScopeTypeStr(const ScopeType t) {
+    static const char *strings[] = {
+        "SCOPE_NONE",    // SCOPE_NONE
+        "SCOPE_GLOBAL",  // SCOPE_GLOBAL
+        "SCOPE_LOCAL",   // SCOPE_LOCAL
+        "SCOPE_UPVALUE", // SCOPE_UPVALUE
+    };
+    static_assert(ARRAY_LEN(strings) == __SCOPE_CNT,
+                  "number of ScopeTypes changed");
+    return strings[t];
+}
 
 #endif // INCLUDE_SRC_AST_H_

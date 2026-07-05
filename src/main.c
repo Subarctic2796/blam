@@ -6,9 +6,7 @@
 #define COMMON_IMPLEMENTATION
 #include "common.h"
 
-#include "ast.h"
 #include "parser.h"
-#include "resolver.h"
 #include "vm.h"
 
 #define ARENA_IMPLEMENTATION
@@ -18,25 +16,19 @@ static inline void repl(VM *vm) {
     UNUSED(vm);
 
     char *line = NULL;
-    Stmts stmts = {0};
     for (;;) {
         if (line != NULL) free(line);
         line = readline("> ");
         if (line == NULL) break;
         add_history(line);
 
-        interpret(vm, line, &stmts);
+        interpret(vm, line);
     }
 }
 
 static inline void runFile(VM *vm, const char *path) {
-    UNUSED(vm);
-    UNUSED(path);
-    TODO("runFile");
-
     string src = readFile(path);
-    Stmts stmts = {0};
-    InterpretResult result = interpret(vm, src.items, &stmts);
+    InterpretResult result = interpret(vm, src.items);
     free_string(src);
 
     switch (result) {
@@ -53,12 +45,11 @@ int main(int argc, char *argv[]) {
     uint8_t PARSER_BUFFER[PARSER_SIZE] = {0};
     Parser *parser = (Parser *)PARSER_BUFFER;
 
-    uint8_t RESOLVER_BUFFER[RESOLVER_SIZE] = {0};
-    Resolver *resolver = (Resolver *)RESOLVER_BUFFER;
+    uint8_t COMPILER_BUFFER[COMPILER_SIZE] = {0};
+    Compiler *compiler = (Compiler *)COMPILER_BUFFER;
 
-    void *compiler = NULL;
     VM vm = {0};
-    initVM(&vm, parser, resolver, &compiler);
+    initVM(&vm, parser, compiler);
 
     switch (argc) {
     case 1:  repl(&vm); break;

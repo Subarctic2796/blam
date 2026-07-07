@@ -82,6 +82,7 @@ typedef struct {
     ScopeType scope;
     bool isLocal;
     int index;
+    int depth;
     Token name;
 } ExprIdent;
 
@@ -111,6 +112,7 @@ typedef struct {
     ScopeType scope;
     bool isLocal;
     int idx;
+    int depth;
     union {
         Expr *lhs;
         Expr *object;
@@ -158,6 +160,7 @@ typedef struct {
 
 typedef struct {
     Stmts methods; // really []*StmtFn
+    ExprIdent scope;
     ExprIdent superClass;
 } StmtClass;
 
@@ -174,6 +177,7 @@ typedef enum {
 
 typedef struct StmtFn {
     FnType type;
+    int upvaluesCnt;
     Stmts body;
     Tokens params;
 } StmtFn;
@@ -220,6 +224,7 @@ typedef struct Stmt {
 
 typedef struct {
     FnType fnType;
+    int upvaluesCnt;
     union {
         Expr *cond;
         Expr *expr;
@@ -243,7 +248,10 @@ typedef struct {
         ExprIdent superClass;
         ExprIdent index;
     };
-    ExprIdent name;
+    union {
+        ExprIdent name;
+        ExprIdent scope;
+    };
 } StmtOpts;
 
 #define newExpr(ty, tk, ...)                                                   \

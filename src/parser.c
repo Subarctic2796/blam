@@ -48,6 +48,7 @@ typedef struct {
     Token name;
     int depth;
     uint8_t exitOP;
+    bool outOfScope;
 } Local;
 
 typedef struct {
@@ -228,13 +229,25 @@ static inline Token syntheticToken(stringView sv) {
     return (Token){0, 0, .lexeme = sv};
 }
 
+static inline Scope *getScope(Parser *p, int index) {
+    return &p->scopes.items[index];
+}
+
 static inline Scope *curScope(Parser *p) {
-    return &p->scopes.items[p->scopes.cnt - 1];
+    return getScope(p, p->scopes.cnt - 1);
 }
 
 static inline void beginScope(Parser *p) { p->scopeDepth++; }
 
-static inline void endScope(Parser *p) { p->scopeDepth--; }
+static inline void endScope(Parser *p) {
+    p->scopeDepth--;
+
+    Scope *cur = curScope(p);
+    for (int i = 0; i < cur->localCnt; i++) {
+        Local *local = &cur->locals[i];
+        if (local->depth > p->scopeDepth) local->outOfScope = true;
+    }
+}
 
 static inline void initScope(Parser *p, Scope *s) {
     *s = (Scope){0};
@@ -257,9 +270,11 @@ static inline void beginFunc(Parser *p, FnType type) {
     cur->locals[cur->localCnt++] = local;
 }
 
-static inline void endFunc(Parser *p) {
+static inline int endFunc(Parser *p) {
+    int upvalueCnt = curScope(p)->upvalueCnt;
     clearScope(curScope(p));
     p->scopes.cnt--;
+    return upvalueCnt;
 }
 
 static int addLocal(Parser *p, const Token name) {
@@ -269,16 +284,12 @@ static int addLocal(Parser *p, const Token name) {
         return -1;
     }
 
-    cur->locals[cur->localCnt++] = (Local){name, -1, OP_POP};
+    cur->locals[cur->localCnt++] = (Local){name, -1, OP_POP, false};
     return cur->localCnt - 1;
 }
 
 static int addUpvalue(Parser *p, Scope *scope, uint8_t index, bool isLocal) {
     int upvalueCnt = scope->upvalueCnt;
-    if (upvalueCnt == MAX_UPVALUES) {
-        error(p, "Too many closure variables in function");
-        return -1;
-    }
 
     for (int i = 0; i < upvalueCnt; i++) {
         Upvalue upvalue = scope->upvalues[i];
@@ -288,18 +299,24 @@ static int addUpvalue(Parser *p, Scope *scope, uint8_t index, bool isLocal) {
         }
     }
 
+    if (upvalueCnt == MAX_UPVALUES) {
+        error(p, "Too many closure variables in function");
+        return 0;
+    }
+
     scope->upvalues[upvalueCnt] = (Upvalue){index, isLocal};
     return scope->upvalueCnt++;
 }
 
 static int resolveLocal(Parser *p, Scope *scope, Token name) {
+    if (p->scopeDepth == 0) return -1;
     for (int i = scope->localCnt - 1; i >= 0; i--) {
         Local local = scope->locals[i];
         if (stringsEqual(name.lexeme, local.name.lexeme)) {
             if (local.depth == -1) {
                 error(p, "Can't read local variable in its own initializer");
             }
-            return i;
+            if (!local.outOfScope) return i;
         }
     }
     return -1;
@@ -308,12 +325,13 @@ static int resolveLocal(Parser *p, Scope *scope, Token name) {
 static int resolveUpvalue(Parser *p, Scope *scope, Token name) {
     if (scope->index == 0) return -1;
 
-    int local = resolveLocal(p, &p->scopes.items[scope->index - 1], name);
+    int local = resolveLocal(p, getScope(p, scope->index - 1), name);
     if (local != -1) {
+        getScope(p, scope->index - 1)->locals[local].exitOP = OP_CLOSE_UPVALUE;
         return addUpvalue(p, scope, (uint8_t)local, true);
     }
 
-    int upvalue = resolveUpvalue(p, &p->scopes.items[scope->index - 1], name);
+    int upvalue = resolveUpvalue(p, getScope(p, scope->index - 1), name);
     if (upvalue != -1) {
         return addUpvalue(p, scope, (uint8_t)upvalue, false);
     }
@@ -439,25 +457,30 @@ static Expr *unary(Parser *p, bool canAssign) {
 static ExprIdent namedVar(Parser *p, Token name) {
     ScopeType scope = SCOPE_GLOBAL;
     bool isLocal = false;
+    int depth = p->scopeDepth;
     int idx = resolveLocal(p, curScope(p), name);
     if (idx != -1) {
         scope = SCOPE_LOCAL;
+        Scope *cur = curScope(p);
+        depth = cur->locals[idx].depth;
     } else if ((idx = resolveUpvalue(p, curScope(p), name)) != -1) {
         scope = SCOPE_UPVALUE;
         Scope *cur = curScope(p);
-        isLocal = cur->upvalues[cur->upvalueCnt - 1].isLocal;
+        isLocal = cur->upvalues[idx].isLocal;
     } else {
         idx = -1;
+        depth = 0;
     }
 
-    return (ExprIdent){scope, isLocal, idx, name};
+    return (ExprIdent){scope, isLocal, idx, depth, name};
 }
 
 static Expr *variable(Parser *p, bool canAssign) {
     UNUSED(canAssign);
     ExprIdent ident = namedVar(p, p->prv);
     return newExpr(EXPR_IDENT, p->prv, .scope = ident.scope, .idx = ident.index,
-                   .isLocal = ident.isLocal, .name = p->prv);
+                   .depth = ident.depth, .isLocal = ident.isLocal,
+                   .name = p->prv);
 }
 
 static Expr *literal(Parser *p, bool canAssign) {
@@ -760,10 +783,11 @@ static Stmt *function(Parser *p, FnType type) {
 
     Stmts body = block(p);
     endScope(p);
-    endFunc(p);
 
-    Stmt *fn = newStmt(STMT_FUN, name, .params = params, .bodyf = body,
-                       .fnType = type);
+    int upvalueCnt = endFunc(p);
+
+    Stmt *fn = newStmt(STMT_FUN, name, .upvaluesCnt = upvalueCnt,
+                       .params = params, .bodyf = body, .fnType = type);
     p->curFN = prvFn;
 
     if (type == FN_FUNC) defineVariable(p);
@@ -792,7 +816,7 @@ static Stmt *classDecl(Parser *p) {
     if (match(p, TOKEN_LT)) {
         Token tok = consume(p, TOKEN_IDENTIFIER, "Expect superclass name");
 
-        supercls = (ExprIdent){SCOPE_NONE, false, p->scopeDepth, tok};
+        supercls = (ExprIdent){SCOPE_NONE, false, -1, p->scopeDepth, tok};
         if (stringsEqual(supercls.name.lexeme, name.lexeme)) {
             error(p, "A class can't inherit from itself");
         }
@@ -808,7 +832,7 @@ static Stmt *classDecl(Parser *p) {
 
     consume(p, TOKEN_RBRACE, "Expect '{' before class body");
 
-    // TODO: determine scope info of class
+    ExprIdent scope = namedVar(p, name);
     Stmts methods = {0};
     while (!check(p, TOKEN_RBRACE) && !check(p, TOKEN_EOF)) {
         Stmt *method_ = method(p);
@@ -820,7 +844,7 @@ static Stmt *classDecl(Parser *p) {
     if (supercls.scope != SCOPE_NONE) endScope(p);
     p->curCLS = prvCLS;
 
-    return newStmt(STMT_CLASS, name, .superClass = supercls,
+    return newStmt(STMT_CLASS, name, .scope = scope, .superClass = supercls,
                    .methods = methods);
 }
 
@@ -887,8 +911,8 @@ static Stmt *forIterStmt(Parser *p) {
     if (!matchAny(p, 2, TYPES)) return NULL;
 
     // now know for sure that it is a for in stmt
-    ExprIdent index = {SCOPE_NONE, false, p->scopeDepth, {0}};
-    ExprIdent name = {SCOPE_LOCAL, false, p->scopeDepth, first};
+    ExprIdent index = {SCOPE_NONE, false, -1, p->scopeDepth, {0}};
+    ExprIdent name = {SCOPE_LOCAL, false, -1, p->scopeDepth, first};
     if (p->prv.type == TOKEN_COMMA) {
         name.name =
             consume(p, TOKEN_IDENTIFIER,
@@ -920,8 +944,9 @@ static Stmt *forIterStmt(Parser *p) {
     beginScope(p);
     Stmt *body = statement(p);
     endScope(p);
-    endScope(p); // the outer scope
     p->loopDepth--;
+
+    endScope(p); // the outer scope
 
     return newStmt(STMT_FOR_IN, ((Token){0}), .iter = iter, .index = index,
                    .name = name, .bodyw = body);
@@ -1042,7 +1067,6 @@ static Stmt *statement(Parser *p) {
         if (p->curFN == FN_NONE) error(p, "Can't return from top-level code");
 
         if (match(p, TOKEN_SEMICOLON)) {
-            if (p->hadErr) return NULL;
             return newStmt(STMT_CONTROL, tok, .init = NULL);
         }
         if (p->curFN == FN_INIT) {

@@ -4,7 +4,6 @@
 #include "common.h"
 #include "lexer.h"
 #include "token.h"
-#include "vm.h"
 
 typedef enum {
     CLS_NONE,
@@ -41,14 +40,13 @@ typedef struct {
     Precedence prec;
 } ParseRule;
 
-#define OP_POP           0
-#define OP_CLOSE_UPVALUE 1
+#define OP_POP           false
+#define OP_CLOSE_UPVALUE true
 
 typedef struct {
     Token name;
+    bool exitOP;
     int depth;
-    uint8_t exitOP;
-    bool outOfScope;
 } Local;
 
 typedef struct {
@@ -83,18 +81,29 @@ typedef struct Parser {
     Arena arena;
     Lexer lexer;
     Token prv, cur;
+    Stmts stmts;
     Scopes scopes;
 } Parser;
+
+typedef struct {
+    Lexer lexer;
+    Token prv, cur;
+} ParserMark;
 
 static_assert(PARSER_SIZE == sizeof(Parser), "size of parser changed");
 
 void initParser(Parser *p) { *p = (Parser){0}; }
 
+Stmts parserGetStmts(const Parser *p) { return p->stmts; }
+
 static inline void resetParser(Parser *p, const char *src) {
     Arena savedArena = p->arena;
     Scopes scopes = p->scopes;
+    Stmts stmts = p->stmts;
     *p = (Parser){0};
 
+    p->stmts = stmts;
+    p->stmts.cnt = 0;
     p->scopes = scopes;
     p->arena = savedArena;
     arena_reset(&p->arena);
@@ -110,20 +119,14 @@ void freeParser(Parser *p) {
 // HELPERS
 // -------
 
-static inline Parser saveParser(const Parser *p, Arena_Mark *out) {
-    Parser saved = *p;
-    *out = arena_snapshot(&((Parser *)p)->arena);
-    return saved;
+static inline ParserMark saveParser(const Parser *p) {
+    return (ParserMark){p->lexer, p->prv, p->cur};
 }
 
-static inline void rewindParser(Parser *p, Arena_Mark mark,
-                                Parser *savedParser) {
-    arena_rewind(&p->arena, mark);
-    Arena arena = p->arena;
-    int maxScopes = p->scopes.max;
-    *p = *savedParser;
-    p->arena = arena;
-    if (maxScopes > savedParser->scopes.max) p->scopes.max = maxScopes;
+static inline void rewindParser(Parser *p, ParserMark mark) {
+    p->lexer = mark.lexer;
+    p->prv = mark.prv;
+    p->cur = mark.cur;
 }
 
 static void errorAt(Parser *p, const Token token, const char *msg) {
@@ -185,7 +188,7 @@ static inline void consumeSemiColon(Parser *p, const char *msg) {
 
 static inline bool check(Parser *p, TokenType t) { return p->cur.type == t; }
 
-static inline bool match(Parser *p, TokenType t) {
+static bool match(Parser *p, TokenType t) {
     if (!check(p, t)) return false;
     advance(p);
     return true;
@@ -225,10 +228,6 @@ static inline void synchronize(Parser *parser) {
     }
 }
 
-static inline Token syntheticToken(stringView sv) {
-    return (Token){0, 0, .lexeme = sv};
-}
-
 static inline Scope *getScope(Parser *p, int index) {
     return &p->scopes.items[index];
 }
@@ -241,11 +240,10 @@ static inline void beginScope(Parser *p) { p->scopeDepth++; }
 
 static inline void endScope(Parser *p) {
     p->scopeDepth--;
-
     Scope *cur = curScope(p);
-    for (int i = 0; i < cur->localCnt; i++) {
-        Local *local = &cur->locals[i];
-        if (local->depth > p->scopeDepth) local->outOfScope = true;
+    while (cur->localCnt > 0 &&
+           cur->locals[cur->localCnt - 1].depth > p->scopeDepth) {
+        cur->localCnt--;
     }
 }
 
@@ -264,9 +262,16 @@ static inline void beginFunc(Parser *p, FnType type) {
         p->scopes.cnt++;
     }
 
+    Scope *cur = curScope(p);
+
+    assert(cur->localCnt == 0 && "number of locals in scope is not 0");
+    cur->localCnt = 0;
+
+    assert(cur->upvalueCnt == 0 && "number of upvalues in scope is not 0");
+    cur->upvalueCnt = 0;
+
     Local local = {0};
     local.name.lexeme = type != FN_FUNC ? svLit("this") : svLit("");
-    Scope *cur = curScope(p);
     cur->locals[cur->localCnt++] = local;
 }
 
@@ -284,7 +289,7 @@ static int addLocal(Parser *p, const Token name) {
         return -1;
     }
 
-    cur->locals[cur->localCnt++] = (Local){name, -1, OP_POP, false};
+    cur->locals[cur->localCnt++] = (Local){name, -1, OP_POP};
     return cur->localCnt - 1;
 }
 
@@ -316,7 +321,7 @@ static int resolveLocal(Parser *p, Scope *scope, Token name) {
             if (local.depth == -1) {
                 error(p, "Can't read local variable in its own initializer");
             }
-            if (!local.outOfScope) return i;
+            return i;
         }
     }
     return -1;
@@ -401,9 +406,7 @@ static Expr *map(Parser *p, bool canAssign) {
 
     Token brace = p->prv;
 
-    if (match(p, TOKEN_RBRACE)) {
-        return newExpr(EXPR_HASH, brace, .elements = ((Exprs){0}));
-    }
+    if (match(p, TOKEN_RBRACE)) return newExpr(EXPR_HASH, brace);
 
     Exprs elems = {0};
     do {
@@ -419,7 +422,7 @@ static Expr *map(Parser *p, bool canAssign) {
         arena_da_append(&p->arena, &elems, val);
     } while (match(p, TOKEN_COMMA));
 
-    consume(p, TOKEN_RPAREN, "Expect '}' after map literal");
+    consume(p, TOKEN_RBRACE, "Expect '}' after map literal");
 
     return newExpr(EXPR_HASH, brace, .elements = elems);
 }
@@ -429,9 +432,7 @@ static Expr *array(Parser *p, bool canAssign) {
 
     Token brace = p->prv;
 
-    if (match(p, TOKEN_RSQR)) {
-        return newExpr(EXPR_ARRAY, brace, .elements = ((Exprs){0}));
-    }
+    if (match(p, TOKEN_RSQR)) return newExpr(EXPR_ARRAY, brace);
 
     Exprs elems = {0};
     do {
@@ -536,9 +537,7 @@ static Expr *call(Parser *p, bool canAssign, Expr *lhs) {
     UNUSED(canAssign);
     Token tok = p->prv;
 
-    if (match(p, TOKEN_RPAREN)) {
-        return newExpr(EXPR_CALL, tok, .callee = lhs, .args = ((Exprs){0}));
-    }
+    if (match(p, TOKEN_RPAREN)) return newExpr(EXPR_CALL, tok, .callee = lhs);
 
     Exprs args = {0};
     do {
@@ -607,9 +606,10 @@ static Expr *assignment(Parser *p, bool canAssign, Expr *lhs) {
     switch (lhs->type) {
     case EXPR_IDENT: {
         ExprIdent ident = lhs->as.ident;
+        val = desugarOp(p, lhs, opr, val);
         return newExpr(EXPR_ASSIGN, ident.name, .opr = opr,
                        .scope = ident.scope, .isLocal = ident.isLocal,
-                       .idx = ident.index, .value = val);
+                       .idx = ident.index, .depth = ident.depth, .value = val);
     }
     case EXPR_GET: {
         val = desugarOp(p, lhs->as.get, opr, val);
@@ -830,7 +830,7 @@ static Stmt *classDecl(Parser *p) {
         p->curCLS = CLS_SUBCLASS;
     }
 
-    consume(p, TOKEN_RBRACE, "Expect '{' before class body");
+    consume(p, TOKEN_LBRACE, "Expect '{' before class body");
 
     ExprIdent scope = namedVar(p, name);
     Stmts methods = {0};
@@ -957,14 +957,13 @@ static Stmt *forStmt(Parser *p) {
     consume(p, TOKEN_LPAREN, "Expect '(' after 'for'");
 
     // save parser in case it isn't a for iter stmt
-    Arena_Mark mark = {0};
-    Parser savedParser = saveParser(p, &mark);
+    ParserMark mark = saveParser(p);
     // parse for iter stmts
     Stmt *stmt = forIterStmt(p);
     if (stmt != NULL) return stmt;
 
     // restore parser if it wasn't a for iter stmt
-    rewindParser(p, mark, &savedParser);
+    rewindParser(p, mark);
 
     // parse a normal for loop
     Stmt *init = NULL;
@@ -1066,9 +1065,7 @@ static Stmt *statement(Parser *p) {
         Token tok = p->prv;
         if (p->curFN == FN_NONE) error(p, "Can't return from top-level code");
 
-        if (match(p, TOKEN_SEMICOLON)) {
-            return newStmt(STMT_CONTROL, tok, .init = NULL);
-        }
+        if (match(p, TOKEN_SEMICOLON)) return newStmt(STMT_CONTROL, tok);
         if (p->curFN == FN_INIT) {
             error(p, "Can't return a value from an initializer");
         }
@@ -1100,16 +1097,14 @@ static Stmt *statement(Parser *p) {
     }
 }
 
-bool parse(VM *vm, Parser *p, const char *src, Stmts *stmts) {
-    UNUSED(vm);
+bool parse(Parser *p, const char *src) {
     resetParser(p, src);
-    stmts->cnt = 0;
     advance(p);
 
     beginFunc(p, FN_SCRIPT);
     while (!match(p, TOKEN_EOF)) {
         Stmt *stmt = declaration(p);
-        if (stmt != NULL) arena_da_append(&p->arena, stmts, stmt);
+        if (stmt != NULL) arena_da_append(&p->arena, &p->stmts, stmt);
     }
     endFunc(p);
 

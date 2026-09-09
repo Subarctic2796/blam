@@ -7,7 +7,7 @@ SRCS = $(wildcard $(SRC)/*.c)
 OBJ = obj
 OBJS = $(patsubst $(SRC)/%.c, $(OBJ)/%.o, $(SRCS))
 
-LIBS = -lreadline
+LIBS = -lreadline -lm
 
 BIN = blam
 

@@ -1,7 +1,9 @@
 #include "vm.h"
+#include "ast.h"
 #include "common.h"
 #include "compiler.h"
 #include "parser.h"
+#include "value.h"
 
 void initVM(VM *vm, Parser *parser, Compiler *compiler) {
     *vm = (VM){0};
@@ -15,18 +17,21 @@ void initVM(VM *vm, Parser *parser, Compiler *compiler) {
 
 void freeVM(VM *vm) {
     freeParser(vm->parser);
-    // freeCompiler(vm->compiler);
+    freeCompiler(vm->compiler);
     TODO("");
 }
 
-InterpretResult interpret(VM *vm, const char *src) {
-    static Stmts stmts = {0};
-    if (!parse(vm, vm->parser, src, &stmts)) return INTERPRET_COMPILE_ERR;
+static AstPrinter AST_PRINTER = {0};
 
-    for (size_t i = 0; i < stmts.cnt; i++) {
-        printStmt(stmts.items[i]);
-        puts("");
-    }
+InterpretResult interpret(VM *vm, const char *src) {
+    if (!parse(vm->parser, src)) return INTERPRET_COMPILE_ERR;
+
+    Stmts stmts = parserGetStmts(vm->parser);
+    initAstPrinter(&AST_PRINTER, stmts);
+    astPrinterPrint(&AST_PRINTER);
+
+    ObjFn *func = compile(vm, vm->compiler, stmts);
+    if (func == NULL) return INTERPRET_COMPILE_ERR;
 
     return INTERPRET_OK;
 }

@@ -18,23 +18,26 @@ typedef enum {
     OBJ_ARRAY,
     OBJ_MAP,
     OBJ_RANGE,
+    __OBJ_CNT,
 } ObjType;
 
 static inline const char *ObjTypeString(ObjType t) {
     static const char *strings[] = {
-        [OBJ_BOUND_METHOD] = "OBJ_BOUND_METHOD",
-        [OBJ_CLASS] = "OBJ_CLASS",
-        [OBJ_CLOSURE] = "OBJ_CLOSURE",
-        [OBJ_FUNCTION] = "OBJ_FUNCTION",
-        [OBJ_INSTANCE] = "OBJ_INSTANCE",
-        [OBJ_NATIVE] = "OBJ_NATIVE",
-        [OBJ_STRING] = "OBJ_STRING",
-        [OBJ_ERROR] = "OBJ_ERROR",
-        [OBJ_UPVALUE] = "OBJ_UPVALUE",
-        [OBJ_ARRAY] = "OBJ_ARRAY",
-        [OBJ_MAP] = "OBJ_MAP",
-        [OBJ_RANGE] = "OBJ_RANGE",
+        "OBJ_BOUND_METHOD", // OBJ_BOUND_METHOD
+        "OBJ_CLASS",        // OBJ_CLASS
+        "OBJ_CLOSURE",      // OBJ_CLOSURE
+        "OBJ_FUNCTION",     // OBJ_FUNCTION
+        "OBJ_INSTANCE",     // OBJ_INSTANCE
+        "OBJ_NATIVE",       // OBJ_NATIVE
+        "OBJ_STRING",       // OBJ_STRING
+        "OBJ_ERROR",        // OBJ_ERROR
+        "OBJ_UPVALUE",      // OBJ_UPVALUE
+        "OBJ_ARRAY",        // OBJ_ARRAY
+        "OBJ_MAP",          // OBJ_MAP
+        "OBJ_RANGE",        // OBJ_RANGE
     };
+    static_assert(ARRAY_LEN(strings) == __OBJ_CNT,
+                  "number of object types changed");
     return strings[t];
 }
 
@@ -99,7 +102,7 @@ typedef enum {
     VAL_EMPTY,
     VAL_NIL,
     VAL_BOOL,
-    VAL_NUM,
+    VAL_NUMBER,
     VAL_OBJ,
 } ValueType;
 
@@ -192,8 +195,59 @@ typedef struct {
 } ObjString;
 
 typedef struct {
-    void *stub;
+    int offset, line;
+} LineInfo;
+
+typedef struct {
+    int cnt, cap;
+    LineInfo *items;
+} LineInfos;
+
+typedef struct {
+    int cnt, cap;
+    union {
+        uint8_t *items;
+        uint8_t *code;
+    };
+    ValueArray constants;
+    LineInfos lines;
+} Chunk;
+
+typedef struct {
+    Obj obj;
+    int arity, upvalueCnt;
+    ObjString *name;
+    union {
+        Chunk chunk;
+        struct {
+            int cnt, cap;
+            union {
+                uint8_t *items;
+                uint8_t *code;
+            };
+            ValueArray constants;
+            LineInfos lines;
+        };
+    };
 } ObjFn;
+
+typedef struct ObjUpvalue {
+    Obj obj;
+    Value *location;
+    Value closed;
+    struct ObjUpvalue *next;
+} ObjUpvalue;
+
+typedef struct {
+    Obj obj;
+    ObjFn *fn;
+    ObjUpvalue **upvalues;
+    int upvalueCnt;
+} ObjClosure;
+
+int getLine(const Chunk *chunk, int offset);
+
+void printValue(Value value);
 
 // used for dynamically allocated items
 ObjString *takeString(VM *vm, char *chars, int length);
@@ -205,6 +259,14 @@ ObjString *copyString(VM *vm, const char *chars, int length);
 
 // for string literals
 #define CONST_STRING(txt) copyString(vm, txt, sizeof(txt) - 1)
+
+void freeValueMap(VM *vm, ValueMap *map);
+bool valueMapGet(ValueMap *map, Value key, Value *value);
+bool valueMapSet(VM *vm, ValueMap *map, Value key, Value value);
+
+void writeValueArray(VM *vm, ValueArray *array, Value value);
+
+int addConst(VM *vm, Chunk *chunk, Value value);
 
 static inline bool isObjType(Value value, ObjType type) {
     return IS_OBJ(value) && AS_OBJ(value)->type == type;

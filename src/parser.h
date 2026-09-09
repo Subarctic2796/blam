@@ -5,13 +5,12 @@
 #include "common.h"
 #include "token.h"
 
-typedef struct VM VM;
-
-#define PARSER_SIZE 160
+#define PARSER_SIZE 176
 typedef struct Parser Parser;
 
 void initParser(Parser *p);
 void freeParser(Parser *p);
-bool parse(VM *vm, Parser *p, const char *src, Stmts *stmts);
+bool parse(Parser *p, const char *src);
+Stmts parserGetStmts(const Parser *p);
 
 #endif // INCLUDE_SRC_PARSER_H_

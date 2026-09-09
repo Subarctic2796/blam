@@ -43,13 +43,6 @@ typedef struct {
 } Exprs;
 
 typedef struct {
-    ScopeType scope;
-    int index;
-    Expr *value;
-    Token oper;
-} ExprAssign;
-
-typedef struct {
     Expr *lhs;
     Expr *rhs;
 } ExprBinary;
@@ -85,6 +78,15 @@ typedef struct {
     int depth;
     Token name;
 } ExprIdent;
+
+typedef struct {
+    ScopeType scope;
+    bool isLocal;
+    int index;
+    int depth;
+    Expr *value;
+    Token oper;
+} ExprAssign;
 
 typedef struct Expr {
     ExprType type;
@@ -155,7 +157,7 @@ typedef enum {
 
 typedef struct {
     Stmt **items;
-    size_t cnt, cap;
+    uint32_t cnt, cap;
 } Stmts;
 
 typedef struct {
@@ -253,6 +255,21 @@ typedef struct {
         ExprIdent scope;
     };
 } StmtOpts;
+
+typedef struct {
+    int depth;
+    Stmts prog;
+} AstPrinter;
+
+static inline void initAstPrinter(AstPrinter *ap, const Stmts prog) {
+    *ap = (AstPrinter){0, prog};
+}
+
+static inline void resetAstPrinter(AstPrinter *ap, const Stmts prog) {
+    initAstPrinter(ap, prog);
+}
+
+void astPrinterPrint(AstPrinter *ap);
 
 #define newExpr(ty, tk, ...)                                                   \
     newExprOpts(&p->arena, ty, tk, (ExprOpts){__VA_ARGS__})

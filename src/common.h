@@ -15,8 +15,19 @@
 #include <stdlib.h>
 #include <string.h>
 
+// #define NAN_BOXING
+
 #define MAX_UPVALUES 256
 #define MAX_LOCALS   256
+
+#define BLAM_DEBUG
+
+#ifdef BLAM_DEBUG // BLAM_DEBUG
+#define DEBUG_PRINT_CODE
+#define DEBUG_TRACE_EXECUTION
+#define DEBUG_STRESS_GC
+#define DEBUG_LOG_GC
+#endif // BLAM_DEBUG
 
 #define API
 
@@ -118,7 +129,7 @@ typedef struct {
 } stringViews;
 
 typedef struct {
-    stringView *items;
+    string *items;
     size_t cnt, cap;
 } strings;
 

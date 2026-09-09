@@ -145,4 +145,8 @@ static inline void printToken(Token t) {
     printf("%s %d %.*s", tokenTypeString(t.type), t.line, (int)t.cnt, t.items);
 }
 
+static inline Token syntheticToken(stringView name) {
+    return (Token){.type = __TOKEN_CNT, .line = 0, .lexeme = name};
+}
+
 #endif // INCLUDE_SRC_TOKEN_H_

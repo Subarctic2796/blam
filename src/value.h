@@ -195,6 +195,12 @@ typedef struct {
 } ObjString;
 
 typedef struct {
+    Obj *obj;
+    bool recoverable;
+    ObjString *msg;
+} ObjError;
+
+typedef struct {
     int offset, line;
 } LineInfo;
 
@@ -245,9 +251,36 @@ typedef struct {
     int upvalueCnt;
 } ObjClosure;
 
+typedef struct {
+    Obj obj;
+    ObjString *name;
+    // TODO:
+    int fields;
+    ValueArray methods;
+} ObjClass;
+
+typedef struct {
+    Obj obj;
+    ObjClass *klass;
+    ValueArray fields;
+} ObjInstance;
+
+typedef struct {
+    Obj obj;
+    ValueMap map;
+} ObjMap;
+
+typedef struct {
+    Obj obj;
+    ValueArray array;
+} ObjArray;
+
 int getLine(const Chunk *chunk, int offset);
+void writeChunk(VM *vm, Chunk *chunk, uint8_t byte, int line);
+void freeChunk(VM *vm, Chunk *chunk);
 
 void printValue(Value value);
+uint32_t hashValue(Value value);
 
 // used for dynamically allocated items
 ObjString *takeString(VM *vm, char *chars, int length);
@@ -261,15 +294,42 @@ ObjString *copyString(VM *vm, const char *chars, int length);
 #define CONST_STRING(txt) copyString(vm, txt, sizeof(txt) - 1)
 
 void freeValueMap(VM *vm, ValueMap *map);
+bool valueMapContains(ValueMap *map, Value key);
 bool valueMapGet(ValueMap *map, Value key, Value *value);
 bool valueMapSet(VM *vm, ValueMap *map, Value key, Value value);
+bool valueMapDelete(ValueMap *map, Value key);
+void valueMapClear(ValueMap *map);
 
 void writeValueArray(VM *vm, ValueArray *array, Value value);
+void freeValueArray(VM *vm, ValueArray *array);
 
 int addConst(VM *vm, Chunk *chunk, Value value);
 
+ObjFn *newObjFn(VM *vm);
+
 static inline bool isObjType(Value value, ObjType type) {
     return IS_OBJ(value) && AS_OBJ(value)->type == type;
+}
+
+static inline bool valuesEqual(Value a, Value b) {
+#ifdef NAN_BOXING
+    if (IS_NUMBER(a) && IS_NUMBER(b)) return AS_NUMBER(a) == AS_NUMBER(b);
+#else
+    if (a.type != b.type) return false;
+    switch (a.type) {
+    case VAL_UNDEFINED: return false;
+    case VAL_EMPTY:     return true;
+    case VAL_NIL:       return true;
+    case VAL_BOOL:      return AS_BOOL(a) == AS_BOOL(b);
+    case VAL_NUMBER:    return AS_NUMBER(a) == AS_NUMBER(b);
+    case VAL_OBJ:       return AS_OBJ(a) == AS_OBJ(b);
+    default:            VM_UNREACHABLE(); return false;
+    }
+#endif
+}
+
+static inline __attribute__((always_inline)) int fsda(int a, int b) {
+    return a + b;
 }
 
 #endif // INCLUDE_SRC_VALUE_H_

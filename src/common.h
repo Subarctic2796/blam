@@ -31,6 +31,8 @@
 
 #define API
 
+#define MAP_MAX_LOAD 0.75
+
 #define UNUSED(arg) ((void)arg)
 
 #define TODO(message)                                                          \
@@ -40,12 +42,29 @@
         abort();                                                               \
     } while (0)
 
+#define STUB(msg)                                                              \
+    do {                                                                       \
+        fprintf(stderr, "[%s:%d] %s stub: %s\n", __FILE__, __LINE__, __func__, \
+                strlen(msg) == 0 ? "" : msg);                                  \
+    } while (0)
+
 #define UNREACHABLE(message)                                                   \
     do {                                                                       \
         fprintf(stderr, "[%s:%d] in %s() UNREACHABLE: %s\n", __FILE__,         \
                 __LINE__, __func__, message);                                  \
         abort();                                                               \
     } while (0)
+
+#ifdef BLAM_DEBUG
+#define VM_UNREACHABLE()                                                       \
+    do {                                                                       \
+        fprintf(stderr, "[%s:%d] in %s() should be unreachable\n", __FILE__,   \
+                __LINE__, __func__);                                           \
+        abort();                                                               \
+    } while (0)
+#else
+#define VM_UNREACHABLE() __builtin_unreachable()
+#endif // BLAM_DEBUG
 
 #define ARRAY_LEN(array) (sizeof(array) / sizeof(array[0]))
 
@@ -143,6 +162,7 @@ API string stringCopy(const string s);
 API string stringFromCstr(const char *cstr);
 // needs to be freed
 // adds null terminator
+API string stringFromFormatV(const char *fmt, va_list args);
 API string stringFromFormat(const char *fmt, ...);
 API int sbAppendf(stringBuilder *sb, const char *fmt, ...);
 // need to free this
@@ -199,19 +219,27 @@ API string stringFromCstr(const char *cstr) {
 
 // needs to be freed
 // adds null terminator
-API string stringFromFormat(const char *fmt, ...) {
-    va_list args;
-
-    va_start(args, fmt);
-    size_t n = vsnprintf(NULL, 0, fmt, args);
-    va_end(args);
+API string stringFromFormatV(const char *fmt, va_list args) {
+    va_list copy;
+    va_copy(copy, args);
+    size_t n = vsnprintf(NULL, 0, fmt, copy);
+    va_end(copy);
 
     char *buf = (char *)malloc(n + 1);
-    va_start(args, fmt);
     vsnprintf(buf, n + 1, fmt, args);
-    va_end(args);
 
     return (string){buf, n};
+}
+
+// needs to be freed
+// adds null terminator
+API string stringFromFormat(const char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    string ret = stringFromFormatV(fmt, args);
+    va_end(args);
+
+    return ret;
 }
 
 API int sbAppendf(stringBuilder *sb, const char *fmt, ...) {

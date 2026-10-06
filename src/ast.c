@@ -1,7 +1,5 @@
-#include <stdarg.h>
-
-#include "arena.h"
 #include "ast.h"
+#include "arena.h"
 #include "common.h"
 #include "token.h"
 
@@ -65,9 +63,10 @@ Stmt *newStmtOpts(Arena *a, StmtType type, Token tok, StmtOpts opts) {
     case STMT_EXPR:    ret->as.expr = opts.expr; break;
     case STMT_PRINT:   ret->as.print = opts.print; break;
     case STMT_VAR:     ret->as.var = (StmtVar){opts.init, opts.name}; break;
-    case STMT_WHILE:   ret->as.while_ = (StmtWhile){opts.cond, opts.bodyw}; break;
+    case STMT_WHILE: ret->as.while_ = (StmtWhile){opts.cond, opts.bodyw}; break;
     case STMT_CLASS:
-        ret->as.klass = (StmtClass){opts.methods, opts.scope, opts.superClass};
+        ret->as.klass =
+            (StmtClass){opts.fields, opts.methods, opts.scope, opts.superClass};
         break;
     case STMT_FUN:
         ret->as.fun =
@@ -222,10 +221,13 @@ void printStmt(const Stmt *stmt) {
             Token name = klass.superClass.name;
             printf(" < %.*s", (int)name.cnt, name.items);
         }
-        Stmts methods = klass.methods;
-        for (size_t i = 0; i < methods.cnt; i++) {
+        for (size_t i = 0; i < klass.fields.cnt; i++) {
+            Token name = klass.fields.items[i];
+            printf(" %.*s", (int)name.cnt, name.items);
+        }
+        for (size_t i = 0; i < klass.methods.cnt; i++) {
             putchar(' ');
-            printStmt(methods.items[i]);
+            printStmt(klass.methods.items[i]);
         }
         putchar(')');
     } break;
@@ -329,245 +331,310 @@ void printStmt(const Stmt *stmt) {
     }
 }
 
-static inline void astPrinterAdd(const AstPrinter *ap, const char *v) {
-    printf("%*s%s", ap->depth * 4, " ", v);
-}
+static const string RHS_INDENT = {NULL, ~0};
+static const string LHS_INDENT = {NULL, ~1};
 
-static inline void astPrinterAddLine(const AstPrinter *ap, const char *line) {
-    printf("%*s%s\n", ap->depth * 4, " ", line);
-}
+// name must end with a '('
+#define prettyPrintStart(ap, name)                                             \
+    do {                                                                       \
+        arena_da_append(&(ap)->arena, &(ap)->lines, strLit(name));             \
+        arena_da_append(&(ap)->arena, &(ap)->lines, RHS_INDENT);               \
+    } while (0)
 
-static inline void astPrinterAddLinef(const AstPrinter *ap, const char *format,
-                                      ...) {
-    printf("%*s", ap->depth * 4, " ");
+#define prettyPrintEnd(ap)                                                     \
+    do {                                                                       \
+        arena_da_append(&(ap)->arena, &(ap)->lines, LHS_INDENT);               \
+        arena_da_append(&(ap)->arena, &(ap)->lines, strLit(")"));              \
+    } while (0)
+
+static void prettyPrintExpr(AstPrettyPrinter *ap, const Expr *expr);
+static void prettyPrintStmt(AstPrettyPrinter *ap, const Stmt *stmt);
+
+static void prettyPrintAddf(AstPrettyPrinter *ap, const char *fmt, ...) {
     va_list args;
-    va_start(args, format);
-    vprintf(format, args);
+
+    va_start(args, fmt);
+    size_t n = vsnprintf(NULL, 0, fmt, args);
     va_end(args);
-    puts("");
+
+    char *buf = (char *)arena_alloc(&ap->arena, n + 1);
+    va_start(args, fmt);
+    vsnprintf(buf, n + 1, fmt, args);
+    va_end(args);
+
+    arena_da_append(&ap->arena, &ap->lines, newStr(buf, n));
 }
 
-static void astPrinterPrintExpr(AstPrinter *ap, const Expr *expr);
-static void astPrinterPrintStmt(AstPrinter *ap, const Stmt *stmt);
+#define prettyPrintAdd(ap, s) arena_da_append(&ap->arena, &ap->lines, strLit(s))
 
-static inline void astPrinterStart(AstPrinter *ap, const char *label) {
-    astPrinterAddLinef(ap, "%s(", label);
-    ap->depth++;
-}
-
-static inline void astPrinterEnd(AstPrinter *ap) {
-    ap->depth--;
-    astPrinterAddLine(ap, ")");
-}
-
-static void astPrinterPrintExpr(AstPrinter *ap, const Expr *expr) {
+static void prettyPrintExpr(AstPrettyPrinter *ap, const Expr *expr) {
     Token tok = expr->token;
     switch (expr->type) {
-    case EXPR_THIS:  astPrinterAddLine(ap, "This"); break;
-    case EXPR_ARRAY: {
-        Exprs arr = expr->as.elements;
-        astPrinterStart(ap, "Array");
-        for (size_t i = 0; i < arr.cnt; i++) {
-            astPrinterPrintExpr(ap, arr.items[i]);
-        }
-        astPrinterEnd(ap);
-    } break;
-    case EXPR_HASH: {
-        Exprs arr = expr->as.elements;
-        astPrinterStart(ap, "Hash");
-        for (size_t i = 0; i < arr.cnt; i += 2) {
-            astPrinterAdd(ap, "key=");
-            astPrinterPrintExpr(ap, arr.items[i]);
-            astPrinterAdd(ap, "value=");
-            astPrinterPrintExpr(ap, arr.items[i + 1]);
-        }
-        astPrinterEnd(ap);
-    } break;
-    case EXPR_ASSIGN: {
-        ExprAssign assign = expr->as.assign;
-        astPrinterStart(ap, "Assign");
-
-        astPrinterAddLinef(ap, "op='%.*s',", (int)assign.oper.cnt,
-                           assign.oper.items);
-        astPrinterAddLinef(ap, "ident=%.*s,", (int)tok.cnt, tok.items);
-        astPrinterAdd(ap, "value=");
-        astPrinterPrintExpr(ap, assign.value);
-        astPrinterEnd(ap);
+    case EXPR_THIS: prettyPrintAdd(ap, "This"); break;
+    case EXPR_LITERAL:
+        prettyPrintAddf(ap, "Literal(%.*s)", (int)tok.cnt, tok.items);
+        break;
+    case EXPR_SUPER:
+        prettyPrintAddf(ap, "Super(%.*s)", (int)expr->as.method.cnt,
+                        expr->as.method.items);
+        break;
+    case EXPR_IDENT: {
+        ExprIdent ident = expr->as.ident;
+        prettyPrintAddf(ap, "Ident(%.*s[%s:%d:%d])", (int)ident.name.cnt,
+                        ident.name.items, ScopeTypeStr(ident.scope),
+                        ident.depth, ident.index);
     } break;
     case EXPR_LOGICAL:
     case EXPR_BINARY:  {
         ExprBinary bin = expr->as.binary;
+        prettyPrintStart(ap, "Binary(");
 
-        astPrinterStart(ap, "Binary");
+        prettyPrintAdd(ap, "left=");
+        prettyPrintExpr(ap, bin.lhs);
+        prettyPrintAddf(ap, "op='%.*s',", (int)tok.cnt, tok.items);
+        prettyPrintAdd(ap, "right=");
+        prettyPrintExpr(ap, bin.rhs);
 
-        astPrinterAdd(ap, "left=");
-        astPrinterPrintExpr(ap, bin.lhs);
-        astPrinterAddLine(ap, ",");
-        astPrinterAddLinef(ap, "op='%.*s',", (int)tok.cnt, tok.items);
-        astPrinterAdd(ap, "right=");
-        astPrinterPrintExpr(ap, bin.rhs);
-
-        astPrinterEnd(ap);
+        prettyPrintEnd(ap);
     } break;
     case EXPR_UNARY: {
-        astPrinterStart(ap, "Unary");
-        astPrinterAddLinef(ap, "op=%*s,", (int)tok.cnt, tok.items);
-        astPrinterAdd(ap, "operand=");
-        astPrinterPrintExpr(ap, expr->as.right);
-        astPrinterEnd(ap);
+        prettyPrintStart(ap, "Unary(");
+        prettyPrintAddf(ap, "op='%.*s',", (int)tok.cnt, tok.items);
+        prettyPrintAdd(ap, "operand=");
+        prettyPrintExpr(ap, expr->as.right);
+        prettyPrintEnd(ap);
+    } break;
+    case EXPR_ARRAY: {
+        Exprs arr = expr->as.elements;
+        if (arr.cnt == 0) {
+            prettyPrintAdd(ap, "Array()");
+            return;
+        }
+        prettyPrintStart(ap, "Array(");
+        for (size_t i = 0; i < arr.cnt; i++) {
+            prettyPrintExpr(ap, arr.items[i]);
+        }
+        prettyPrintEnd(ap);
+    } break;
+    case EXPR_HASH: {
+        Exprs map = expr->as.elements;
+        if (map.cnt == 0) {
+            prettyPrintAdd(ap, "Map()");
+            return;
+        }
+        prettyPrintStart(ap, "Map(");
+        for (size_t i = 0; i < map.cnt; i += 2) {
+            prettyPrintAdd(ap, "key=");
+            prettyPrintExpr(ap, map.items[i]);
+            prettyPrintAdd(ap, "value=");
+            prettyPrintExpr(ap, map.items[i + 1]);
+        }
+        prettyPrintEnd(ap);
+    } break;
+    case EXPR_ASSIGN: {
+        ExprAssign assign = expr->as.assign;
+
+        prettyPrintStart(ap, "Assign(");
+        prettyPrintAddf(ap, "op='%.*s',", (int)assign.oper.cnt,
+                        assign.oper.items);
+        prettyPrintAddf(ap, "ident='%.*s',", (int)tok.cnt, tok.items);
+        prettyPrintAdd(ap, "value=");
+        prettyPrintExpr(ap, assign.value);
+        prettyPrintEnd(ap);
+    } break;
+    case EXPR_GROUPING: {
+        prettyPrintStart(ap, "Group(");
+        prettyPrintExpr(ap, expr->as.group);
+        prettyPrintEnd(ap);
     } break;
     case EXPR_CALL: {
         ExprCall call = expr->as.call;
-        astPrinterStart(ap, "Call");
+        prettyPrintStart(ap, "Call(");
 
-        astPrinterAdd(ap, "Callee=");
-        astPrinterPrintExpr(ap, call.callee);
+        prettyPrintAdd(ap, "Callee=");
+        prettyPrintExpr(ap, call.callee);
 
-        astPrinterStart(ap, "args=");
-        for (size_t i = 0; i < call.args.cnt; i++) {
-            astPrinterPrintExpr(ap, call.args.items[i]);
+        if (call.args.cnt == 0) {
+            prettyPrintAdd(ap, "args=()");
+        } else {
+            prettyPrintStart(ap, "args=(");
+            for (size_t i = 0; i < call.args.cnt; i++) {
+                prettyPrintExpr(ap, call.args.items[i]);
+            }
+            prettyPrintEnd(ap);
         }
-        astPrinterEnd(ap);
 
-        astPrinterEnd(ap);
-    } break;
-    case EXPR_LITERAL:
-        astPrinterAddLinef(ap, "Literal(%.*s)", (int)tok.cnt, tok.items);
-        break;
-    case EXPR_GROUPING: {
-        astPrinterStart(ap, "Group");
-        astPrinterPrintExpr(ap, expr->as.group);
-        astPrinterEnd(ap);
-    } break;
-    case EXPR_IDENT: {
-        Token ident = expr->as.ident.name;
-        astPrinterAddLinef(ap, "Ident(%.*s)", (int)ident.cnt, ident.items);
-    } break;
-    case EXPR_SUPER: {
-        Token method = expr->as.method;
-        astPrinterAddLinef(ap, "Super(%.*s)", (int)method.cnt, method.items);
+        prettyPrintEnd(ap);
     } break;
     case EXPR_GET: {
-        astPrinterStart(ap, "Get");
-        astPrinterAdd(ap, "object=");
-        astPrinterPrintExpr(ap, expr->as.get);
-        astPrinterEnd(ap);
+        prettyPrintStart(ap, "Get(");
+
+        prettyPrintAdd(ap, "object=");
+        prettyPrintExpr(ap, expr->as.get);
+        prettyPrintAdd(ap, ",");
+
+        prettyPrintAddf(ap, "name='%.*s'", (int)tok.cnt, tok.items);
+
+        prettyPrintEnd(ap);
     } break;
     case EXPR_SET: {
         ExprSet set = expr->as.set;
-        astPrinterStart(ap, "Set");
+        prettyPrintStart(ap, "Set(");
 
-        astPrinterAdd(ap, "object=");
-        astPrinterPrintExpr(ap, set.object);
-        astPrinterAddLine(ap, ",");
+        prettyPrintAdd(ap, "object=");
+        prettyPrintExpr(ap, set.object);
+        prettyPrintAdd(ap, ",");
 
-        astPrinterAdd(ap, "value=");
-        astPrinterPrintExpr(ap, set.value);
+        prettyPrintAddf(ap, "name='%.*s',", (int)tok.cnt, tok.items);
+        prettyPrintAdd(ap, "value=");
+        prettyPrintExpr(ap, set.value);
 
-        astPrinterEnd(ap);
+        prettyPrintEnd(ap);
     } break;
     case EXPR_INDEXED_GET: {
         ExprIndexedGet get = expr->as.indexedGet;
-        astPrinterStart(ap, "IndexedGet");
+        prettyPrintStart(ap, "IndexedGet(");
 
-        astPrinterAdd(ap, "object=");
-        astPrinterPrintExpr(ap, get.object);
-        astPrinterAddLine(ap, ",");
+        prettyPrintAdd(ap, "object=");
+        prettyPrintExpr(ap, get.object);
+        prettyPrintAdd(ap, ",");
 
-        astPrinterAdd(ap, "index=");
-        astPrinterPrintExpr(ap, get.index);
+        prettyPrintAdd(ap, "index=");
+        prettyPrintExpr(ap, get.index);
 
-        astPrinterEnd(ap);
+        prettyPrintEnd(ap);
     } break;
     case EXPR_INDEXED_SET: {
         ExprIndexedSet set = expr->as.indexedSet;
-        astPrinterStart(ap, "IndexedSet");
-        astPrinterAdd(ap, "object=");
-        astPrinterPrintExpr(ap, set.object);
-        astPrinterAddLine(ap, ",");
+        prettyPrintStart(ap, "IndexedSet(");
 
-        astPrinterAdd(ap, "index=");
-        astPrinterPrintExpr(ap, set.index);
-        astPrinterAddLine(ap, ",");
+        prettyPrintAdd(ap, "object=");
+        prettyPrintExpr(ap, set.object);
+        prettyPrintAdd(ap, ",");
 
-        astPrinterAdd(ap, "value=");
-        astPrinterPrintExpr(ap, set.value);
-        astPrinterEnd(ap);
-    } break;
-    case EXPR_LAMBDA: {
-        StmtFn fn = expr->as.lambda->as.fun;
-        astPrinterStart(ap, "Lambda");
+        prettyPrintAdd(ap, "index=");
+        prettyPrintExpr(ap, set.index);
+        prettyPrintAdd(ap, ",");
 
-        astPrinterStart(ap, "params=");
-        for (size_t i = 0; i < fn.params.cnt; i++) {
-            Token param = fn.params.items[i];
-            astPrinterAddLinef(ap, "%.*s,", (int)param.cnt, param.items);
-        }
-        astPrinterEnd(ap);
+        prettyPrintAdd(ap, "value=");
+        prettyPrintExpr(ap, set.value);
 
-        astPrinterAddLine(ap, "body=");
-        for (size_t i = 0; i < fn.body.cnt; i++) {
-            astPrinterPrintStmt(ap, fn.body.items[i]);
-        }
-
-        astPrinterEnd(ap);
+        prettyPrintEnd(ap);
     } break;
     case EXPR_IF: {
         StmtIf if_ = expr->as.if_->as.if_;
-        astPrinterStart(ap, "If-Expr");
+        prettyPrintStart(ap, "IfExpr(");
 
-        astPrinterAdd(ap, "Cond=");
-        astPrinterPrintExpr(ap, if_.cond);
-        astPrinterAddLine(ap, ",");
+        prettyPrintAdd(ap, "Cond=");
+        prettyPrintExpr(ap, if_.cond);
+        prettyPrintAdd(ap, ",");
 
-        astPrinterAdd(ap, "Then=");
-        astPrinterPrintStmt(ap, if_.then);
+        prettyPrintAdd(ap, "Then=");
+        prettyPrintStmt(ap, if_.then);
 
         if (if_.elze != NULL) {
-            astPrinterAddLine(ap, ",");
-            astPrinterAdd(ap, "Else=");
-            astPrinterPrintStmt(ap, if_.elze);
+            prettyPrintAdd(ap, ",");
+            prettyPrintAdd(ap, "Else=");
+            prettyPrintStmt(ap, if_.elze);
         }
-        astPrinterEnd(ap);
+
+        prettyPrintEnd(ap);
+    } break;
+    case EXPR_LAMBDA: {
+        StmtFn fn = expr->as.lambda->as.fun;
+        prettyPrintStart(ap, "Lambda(");
+
+        if (fn.params.cnt == 0) {
+            prettyPrintAdd(ap, "params=()");
+        } else {
+            prettyPrintStart(ap, "params=(");
+            for (size_t i = 0; i < fn.params.cnt; i++) {
+                Token param = fn.params.items[i];
+                prettyPrintAddf(ap, "%.*s,", (int)param.cnt, param.items);
+            }
+            prettyPrintEnd(ap);
+        }
+
+        prettyPrintAdd(ap, "body=");
+        for (size_t i = 0; i < fn.body.cnt; i++) {
+            prettyPrintStmt(ap, fn.body.items[i]);
+        }
+
+        prettyPrintEnd(ap);
     } break;
     }
 }
 
-static void astPrinterPrintStmt(AstPrinter *ap, const Stmt *stmt) {
+static void prettyPrintStmt(AstPrettyPrinter *ap, const Stmt *stmt) {
     Token tok = stmt->token;
     switch (stmt->type) {
-    case STMT_BLOCK: {
-        astPrinterStart(ap, "Block");
+    case STMT_EXPR: {
+        prettyPrintStart(ap, "ExprStmt(");
+        prettyPrintExpr(ap, stmt->as.expr);
+        prettyPrintEnd(ap);
+    } break;
+    case STMT_VAR: {
+        StmtVar var = stmt->as.var;
+        prettyPrintStart(ap, "Var(");
 
-        Stmts block = stmt->as.block;
-        for (size_t i = 0; i < block.cnt; i++) {
-            astPrinterPrintStmt(ap, block.items[i]);
+        ExprIdent ident = var.name;
+        prettyPrintAddf(ap, "name=\"%.*s\"[%s:%d:%d],", (int)tok.cnt, tok.items,
+                        ScopeTypeStr(ident.scope), ident.depth, ident.index);
+
+        if (var.init != NULL) {
+            prettyPrintAdd(ap, "init=");
+            prettyPrintExpr(ap, var.init);
         }
 
-        astPrinterEnd(ap);
+        prettyPrintEnd(ap);
+    } break;
+    case STMT_BLOCK: {
+        Stmts block = stmt->as.block;
+        if (block.cnt == 0) {
+            prettyPrintAdd(ap, "Block()");
+            return;
+        }
+        prettyPrintStart(ap, "Block(");
+        for (size_t i = 0; i < block.cnt; i++) {
+            prettyPrintStmt(ap, block.items[i]);
+        }
+        prettyPrintEnd(ap);
     } break;
     case STMT_CLASS: {
         StmtClass klass = stmt->as.klass;
 
-        astPrinterStart(ap, "Class");
+        prettyPrintStart(ap, "Class(");
 
         if (klass.superClass.scope != SCOPE_NONE) {
             Token sc = klass.superClass.name;
-            astPrinterAddLinef(ap, "superclass=\"%.*s\",", (int)sc.cnt,
-                               sc.items);
+            prettyPrintAddf(ap, "superclass=\"%.*s\",", (int)sc.cnt, sc.items);
         } else {
-            astPrinterAddLine(ap, "superclass=\"\",");
+            prettyPrintAdd(ap, "superclass=\"\",");
         }
-        astPrinterAddLinef(ap, "name=\"%.*s\",", (int)tok.cnt, tok.items);
+        prettyPrintAddf(ap, "name=\"%.*s\",", (int)tok.cnt, tok.items);
 
-        astPrinterStart(ap, "methods=");
-        Stmts methods = klass.methods;
-        for (size_t i = 0; i < methods.cnt; i++) {
-            astPrinterPrintStmt(ap, methods.items[i]);
+        if (klass.fields.cnt == 0) {
+            prettyPrintAdd(ap, "fields=()");
+        } else {
+            prettyPrintStart(ap, "fields=(");
+            for (size_t i = 0; i < klass.fields.cnt; i++) {
+                Token field = klass.fields.items[i];
+                prettyPrintAddf(ap, "%.*s,", (int)field.cnt, field.items);
+            }
+            prettyPrintEnd(ap);
         }
-        astPrinterEnd(ap);
 
-        astPrinterEnd(ap);
+        if (klass.methods.cnt == 0) {
+            prettyPrintAdd(ap, "methods=()");
+        } else {
+            prettyPrintStart(ap, "methods=(");
+            for (size_t i = 0; i < klass.methods.cnt; i++) {
+                prettyPrintStmt(ap, klass.methods.items[i]);
+            }
+            prettyPrintEnd(ap);
+        }
+
+        prettyPrintEnd(ap);
     } break;
     case STMT_CONTROL: {
 #pragma GCC diagnostic push
@@ -575,186 +642,107 @@ static void astPrinterPrintStmt(AstPrinter *ap, const Stmt *stmt) {
         switch (tok.type) {
         case TOKEN_RETURN: {
             if (stmt->as.value != NULL) {
-                astPrinterStart(ap, "Return");
-                astPrinterPrintExpr(ap, stmt->as.value);
-                astPrinterEnd(ap);
+                prettyPrintStart(ap, "Return(");
+                prettyPrintExpr(ap, stmt->as.value);
+                prettyPrintEnd(ap);
             } else {
-                astPrinterAddLine(ap, "Return()");
+                prettyPrintAdd(ap, "Return()");
             }
         } break;
-        case TOKEN_BREAK:    astPrinterAddLine(ap, "Break"); break;
-        case TOKEN_CONTINUE: astPrinterAddLine(ap, "Continue"); break;
+        case TOKEN_BREAK:    prettyPrintAdd(ap, "Break()"); break;
+        case TOKEN_CONTINUE: prettyPrintAdd(ap, "Continue()"); break;
         default:
             UNREACHABLE("control type is not return, break, or continue");
             break;
         }
 #pragma GCC diagnostic pop
     } break;
-    case STMT_EXPR: {
-        astPrinterStart(ap, "Expr Stmt");
-        astPrinterPrintExpr(ap, stmt->as.expr);
-        astPrinterEnd(ap);
-    } break;
     case STMT_FUN: {
         StmtFn fn = stmt->as.fun;
-        astPrinterStart(ap, "Func");
+        prettyPrintStart(ap, "Func(");
 
-        astPrinterAddLinef(ap, "name=\"%.*s\",", (int)tok.cnt, tok.items);
+        prettyPrintAddf(ap, "name=\"%.*s\",", (int)tok.cnt, tok.items);
 
-        astPrinterStart(ap, "params=");
-        for (size_t i = 0; i < fn.params.cnt; i++) {
-            Token param = fn.params.items[i];
-            astPrinterAddLinef(ap, "%.*s,", (int)param.cnt, param.items);
+        if (fn.params.cnt == 0) {
+            prettyPrintAdd(ap, "params=()");
+        } else {
+            prettyPrintStart(ap, "params=(");
+            for (size_t i = 0; i < fn.params.cnt; i++) {
+                Token param = fn.params.items[i];
+                prettyPrintAddf(ap, "%.*s,", (int)param.cnt, param.items);
+            }
+            prettyPrintEnd(ap);
         }
-        astPrinterEnd(ap);
 
-        astPrinterAddLine(ap, "body=");
-        for (size_t i = 0; i < fn.body.cnt; i++) {
-            astPrinterPrintStmt(ap, fn.body.items[i]);
+        if (fn.body.cnt == 0) {
+            prettyPrintAdd(ap, "body=()");
+        } else {
+            prettyPrintStart(ap, "body=(");
+            for (size_t i = 0; i < fn.body.cnt; i++) {
+                prettyPrintStmt(ap, fn.body.items[i]);
+            }
+            prettyPrintEnd(ap);
         }
 
-        astPrinterEnd(ap);
+        prettyPrintEnd(ap);
+    } break;
+    case STMT_PRINT: {
+        prettyPrintStart(ap, "Print(");
+        prettyPrintExpr(ap, stmt->as.print);
+        prettyPrintEnd(ap);
     } break;
     case STMT_IF: {
         StmtIf if_ = stmt->as.if_;
-        astPrinterStart(ap, "If");
+        prettyPrintStart(ap, "If(");
 
-        astPrinterAdd(ap, "Cond=");
-        astPrinterPrintExpr(ap, if_.cond);
-        astPrinterAddLine(ap, ",");
+        prettyPrintAdd(ap, "Cond=");
+        prettyPrintExpr(ap, if_.cond);
 
-        astPrinterAdd(ap, "Then=");
-        astPrinterPrintStmt(ap, if_.then);
+        prettyPrintAdd(ap, "Then=");
+        prettyPrintStmt(ap, if_.then);
 
         if (if_.elze != NULL) {
-            astPrinterAddLine(ap, ",");
-            astPrinterAdd(ap, "Else=");
-            astPrinterPrintStmt(ap, if_.elze);
+            prettyPrintAdd(ap, "Else=");
+            prettyPrintStmt(ap, if_.elze);
         }
-        astPrinterEnd(ap);
-    } break;
-    case STMT_PRINT: {
-        astPrinterStart(ap, "Print");
-        astPrinterPrintExpr(ap, stmt->as.print);
-        astPrinterEnd(ap);
-    } break;
-    case STMT_VAR: {
-        StmtVar var = stmt->as.var;
-
-        astPrinterStart(ap, "Var");
-        Token name = var.name.name;
-        astPrinterAddLinef(ap, "name=%.*s,", (int)name.cnt, name.items);
-        if (var.init != NULL) {
-            astPrinterAdd(ap, "init=");
-            astPrinterPrintExpr(ap, var.init);
-        }
-        astPrinterEnd(ap);
+        prettyPrintEnd(ap);
     } break;
     case STMT_WHILE: {
         StmtWhile while_ = stmt->as.while_;
-        astPrinterStart(ap, "While");
+        prettyPrintStart(ap, "While(");
 
-        astPrinterAdd(ap, "Cond=");
-        astPrinterPrintExpr(ap, while_.cond);
+        prettyPrintAdd(ap, "Cond=");
+        prettyPrintExpr(ap, while_.cond);
 
-        astPrinterAdd(ap, "Body=");
-        astPrinterPrintStmt(ap, while_.body);
+        prettyPrintAdd(ap, "Body=");
+        prettyPrintStmt(ap, while_.body);
 
-        astPrinterEnd(ap);
+        prettyPrintEnd(ap);
     } break;
     case STMT_FOR_IN: {
         StmtForIn forin = stmt->as.forIn;
-        astPrinterStart(ap, "ForIn");
+        prettyPrintStart(ap, "ForIn(");
 
+        int cnt = 0;
+        const char *items = NULL;
         if (forin.index.scope != SCOPE_NONE) {
-            Token index = forin.index.name;
-            astPrinterAddLinef(ap, "Index='%.*s',", (int)index.cnt,
-                               index.items);
+            cnt = (int)forin.index.name.cnt;
+            items = forin.index.name.items;
         }
+        prettyPrintAddf(ap, "Index='%.*s',", cnt, items);
 
         Token name = forin.name.name;
-        astPrinterAddLinef(ap, "Name='%.*s',", (int)name.cnt, name.items);
+        prettyPrintAddf(ap, "Name='%.*s',", (int)name.cnt, name.items);
 
-        astPrinterAdd(ap, "Iter=");
-        astPrinterPrintExpr(ap, forin.iter);
+        prettyPrintAdd(ap, "Iter=");
+        prettyPrintExpr(ap, forin.iter);
+        prettyPrintAdd(ap, ",");
 
-        astPrinterAddLine(ap, ",");
-        astPrinterAdd(ap, "Body=");
-        astPrinterPrintStmt(ap, forin.body);
+        prettyPrintAdd(ap, "Body=");
+        prettyPrintStmt(ap, forin.body);
 
-        astPrinterEnd(ap);
+        prettyPrintEnd(ap);
     } break;
-    }
-}
-
-void astPrinterPrint(AstPrinter *ap) {
-    astPrinterStart(ap, "Program");
-    for (size_t i = 0; i < ap->prog.cnt; i++) {
-        astPrinterPrintStmt(ap, ap->prog.items[i]);
-    }
-    astPrinterEnd(ap);
-}
-
-static const string RHS_INDENT = {NULL, ~0};
-static const string LHS_INDENT = {NULL, ~1};
-
-// name must end with a '('
-#define prettyPrintStart2(a, lines, name)                                      \
-    do {                                                                       \
-        arena_da_append(a, lines, strLit(name));                               \
-        arena_da_append(a, lines, RHS_INDENT);                                 \
-    } while (0)
-
-#define prettyPrintEnd2(a, lines)                                              \
-    do {                                                                       \
-        arena_da_append(a, lines, LHS_INDENT);                                 \
-        arena_da_append(a, lines, strLit(")"));                                \
-    } while (0)
-
-static void prettyPrintExpr2(Arena *a, strings *lines, const Expr *expr);
-static void prettyPrintStmt2(Arena *a, strings *lines, const Stmt *stmt);
-
-static void prettyPrintExpr2(Arena *a, strings *lines, const Expr *expr) {
-    Token tok = expr->token;
-    switch (expr->type) {
-    case EXPR_ARRAY:
-    case EXPR_ASSIGN:
-    case EXPR_BINARY:
-    case EXPR_CALL:
-    case EXPR_GET:
-    case EXPR_GROUPING:
-    case EXPR_HASH:
-    case EXPR_IDENT:
-    case EXPR_IF:
-    case EXPR_INDEXED_GET:
-    case EXPR_INDEXED_SET:
-    case EXPR_LAMBDA:
-    case EXPR_LITERAL:
-    case EXPR_LOGICAL:
-    case EXPR_SET:
-    case EXPR_SUPER:
-    case EXPR_THIS:
-    case EXPR_UNARY:       TODO(""); break;
-    }
-}
-
-static void prettyPrintStmt2(Arena *a, strings *lines, const Stmt *stmt) {
-    Token tok = stmt->token;
-    switch (stmt->type) {
-    case STMT_EXPR: prettyPrintExpr2(a, lines, stmt->as.expr); break;
-    case STMT_VAR:  {
-        prettyPrintStart2(a, lines, "VAR(");
-
-        prettyPrintEnd2(a, lines);
-    } break;
-    case STMT_BLOCK:
-    case STMT_CLASS:
-    case STMT_CONTROL:
-    case STMT_FUN:
-    case STMT_IF:
-    case STMT_PRINT:
-    case STMT_WHILE:
-    case STMT_FOR_IN:  TODO(""); break;
     }
 }
 
@@ -763,29 +751,35 @@ static inline bool printWithTabs(const string line, int depth) {
         switch (line.items[line.cnt - 1]) {
         case '(':
         case ')':
-        case ',':
-            printf("%*s%.*s\n", depth, "    ", (int)line.cnt, line.items);
+        case ',': {
+            printf("%*s%.*s\n", depth * 4, "", (int)line.cnt, line.items);
             return true;
         }
+        }
     }
-    printf("%*s%.*s", depth, "    ", (int)line.cnt, line.items);
+    printf("%*s%.*s", depth * 4, "", (int)line.cnt, line.items);
     return false;
 }
 
-void astPrettyPrint2(const Stmts prog) {
-    Arena arena = {0};
-    strings lines = {0};
+void astPrettyPrint(AstPrettyPrinter *ap, const Stmts prog) {
+    ap->lines = (strings){0};
+    arena_reset(&ap->arena);
 
-    prettyPrintStart2(&arena, &lines, "Program(");
-    for (size_t i = 0; i < prog.cnt; i++) {
-        prettyPrintStmt2(&arena, &lines, prog.items[i]);
+    if (prog.cnt == 0) {
+        puts("Program()");
+        return;
     }
-    prettyPrintEnd2(&arena, &lines);
+
+    prettyPrintStart(ap, "Program(");
+    for (size_t i = 0; i < prog.cnt; i++) {
+        prettyPrintStmt(ap, prog.items[i]);
+    }
+    prettyPrintEnd(ap);
 
     int depth = 0;
     bool prvEOL = true;
-    for (size_t i = 0; i < lines.cnt; i++) {
-        string line = lines.items[i];
+    for (size_t i = 0; i < ap->lines.cnt; i++) {
+        string line = ap->lines.items[i];
         if (line.cnt == RHS_INDENT.cnt) {
             depth++;
             continue;
@@ -796,6 +790,4 @@ void astPrettyPrint2(const Stmts prog) {
 
         prvEOL = printWithTabs(line, depth * prvEOL);
     }
-
-    arena_free(&arena);
 }

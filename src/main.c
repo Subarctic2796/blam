@@ -13,8 +13,6 @@
 #include "arena.h"
 
 static inline void repl(VM *vm) {
-    UNUSED(vm);
-
     char *line = NULL;
     for (;;) {
         if (line != NULL) free(line);

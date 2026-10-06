@@ -5,16 +5,27 @@
 #include "parser.h"
 #include "value.h"
 
-#ifdef BLAM_DEBUG
-#define VM_UNREACHABLE()                                                       \
+#define VM_ALLOC(type, cnt)                                                    \
+    (type *)vmReallocate(vm, NULL, 0, sizeof(type) * cnt)
+
+#define VM_FREE(type, ptr) vmReallocate(vm, ptr, sizeof(type), 0)
+
+#define VM_GROW_ARRAY(type, ptr, oldCnt, newCnt)                               \
+    (type *)vmReallocate(vm, ptr, sizeof(type) * (oldCnt),                     \
+                         sizeof(type) * (newCnt))
+
+#define VM_FREE_ARRAY(type, ptr, oldCnt)                                       \
+    vmReallocate(vm, (ptr), sizeof(type) * (oldCnt), 0)
+
+#define VM_da_append(type, da, item)                                           \
     do {                                                                       \
-        fprintf(stderr, "[%s:%d] in %s() should be unreachable\n", __FILE__,   \
-                __LINE__, __func__);                                           \
-        abort();                                                               \
+        if ((da)->cap < (da)->cnt + 1) {                                       \
+            size_t oldcap = (da)->cap;                                         \
+            (da)->cap = GROW_CAP(oldcap);                                      \
+            (da)->items = VM_GROW_ARRAY(type, (da)->items, oldcap, (da)->cap); \
+        }                                                                      \
+        (da)->items[(da)->cnt++] = (item);                                     \
     } while (0)
-#else
-#define VM_UNREACHABLE() __builtin_unreachable()
-#endif // BLAM_DEBUG
 
 #define MAX_TEMP_ROOTS 8
 
@@ -28,7 +39,12 @@ typedef struct VM {
     Parser *parser;
     Compiler *compiler;
 
+    size_t bytesAllocated;
+    size_t nextGC;
     Obj *objects;
+
+    int grayCnt, grayCap;
+    Obj **grayStack;
 
     ValueMap strings;
     ValueMap globalNames;
@@ -41,6 +57,7 @@ typedef struct VM {
 void initVM(VM *vm, Parser *parser, Compiler *compiler);
 void freeVM(VM *vm);
 InterpretResult interpret(VM *vm, const char *src);
+void *vmReallocate(VM *vm, void *ptr, size_t oldSize, size_t newSize);
 
 static inline void pushRoot(VM *vm, Value value) {
     vm->tempRoots[vm->tempCnt++] = value;

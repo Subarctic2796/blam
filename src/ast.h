@@ -161,6 +161,7 @@ typedef struct {
 } Stmts;
 
 typedef struct {
+    Tokens fields;
     Stmts methods; // really []*StmtFn
     ExprIdent scope;
     ExprIdent superClass;
@@ -245,7 +246,10 @@ typedef struct {
         Stmts methods;
         Stmts bodyf;
     };
-    Tokens params;
+    union {
+        Tokens params;
+        Tokens fields;
+    };
     union {
         ExprIdent superClass;
         ExprIdent index;
@@ -257,19 +261,9 @@ typedef struct {
 } StmtOpts;
 
 typedef struct {
-    int depth;
-    Stmts prog;
-} AstPrinter;
-
-static inline void initAstPrinter(AstPrinter *ap, const Stmts prog) {
-    *ap = (AstPrinter){0, prog};
-}
-
-static inline void resetAstPrinter(AstPrinter *ap, const Stmts prog) {
-    initAstPrinter(ap, prog);
-}
-
-void astPrinterPrint(AstPrinter *ap);
+    Arena arena;
+    strings lines;
+} AstPrettyPrinter;
 
 #define newExpr(ty, tk, ...)                                                   \
     newExprOpts(&p->arena, ty, tk, (ExprOpts){__VA_ARGS__})
@@ -281,6 +275,8 @@ Stmt *newStmtOpts(Arena *a, StmtType type, Token tok, StmtOpts opts);
 
 void printExpr(const Expr *expr);
 void printStmt(const Stmt *stmt);
+
+void astPrettyPrint(AstPrettyPrinter *ap, const Stmts prog);
 
 static inline const char *FnTypeStr(const FnType t) {
     static const char *strings[] = {

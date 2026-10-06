@@ -526,6 +526,8 @@ static Expr *this_(Parser *p, bool canAssign) {
     UNUSED(canAssign);
     if (p->curCLS == CLS_NONE) error(p, "Can't use 'this' outside of a class");
     namedVar(p, p->prv);
+    printToken(p->cur);
+    puts("");
     return newExpr(EXPR_THIS, p->prv);
 }
 
@@ -834,7 +836,18 @@ static Stmt *classDecl(Parser *p) {
 
     ExprIdent scope = namedVar(p, name);
     Stmts methods = {0};
+    Tokens fields = {0};
     while (!check(p, TOKEN_RBRACE) && !check(p, TOKEN_EOF)) {
+        ParserMark mark = saveParser(p);
+        if (match(p, TOKEN_IDENTIFIER)) {
+            Token field = p->prv;
+            if (match(p, TOKEN_SEMICOLON)) {
+                arena_da_append(&p->arena, &fields, field);
+                continue;
+            }
+        }
+
+        rewindParser(p, mark);
         Stmt *method_ = method(p);
         if (method_ != NULL) arena_da_append(&p->arena, &methods, method_);
     }
@@ -845,7 +858,7 @@ static Stmt *classDecl(Parser *p) {
     p->curCLS = prvCLS;
 
     return newStmt(STMT_CLASS, name, .scope = scope, .superClass = supercls,
-                   .methods = methods);
+                   .fields = fields, .methods = methods);
 }
 
 static Stmt *funDecl(Parser *p) {

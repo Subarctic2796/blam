@@ -1,4 +1,5 @@
 #include <math.h>
+#include <stdbool.h>
 
 #include "ast.h"
 #include "common.h"
@@ -15,6 +16,11 @@ typedef struct Loop {
     int scopeDepth;
 } Loop;
 
+typedef struct ClassCompiler {
+    struct ClassCompiler *enclosing;
+    bool hasSuperClass;
+} ClassCompiler;
+
 typedef struct {
     OpCode exitOP;
     int depth;
@@ -30,6 +36,7 @@ typedef struct Compiler {
     FnType type;
     int scopeDepth;
     VM *vm;
+    ObjFn *script;
     ObjFn *fn;
     Loop *loop;
     ValueMap constantsTable;
@@ -45,6 +52,11 @@ void initCompiler(Compiler *c) { *c = (Compiler){0}; }
 void freeCompiler(Compiler *c) {
     arena_free(&c->arena);
     freeValueMap(c->vm, &c->constantsTable);
+}
+
+void markCompiler(VM *vm, Compiler *c) {
+    UNUSED(vm);
+    UNUSED(c);
     TODO("");
 }
 
@@ -56,11 +68,18 @@ static void resetCompiler(Compiler *c, VM *vm) {
 
     *c = (Compiler){0};
 
-    c->locals = locals;
     c->constantsTable = constantsTable;
     c->vm = vm;
+    c->locals = locals;
     c->arena = arena;
+    c->type = FN_SCRIPT;
+
     arena_reset(&c->arena);
+
+    c->script = newObjFn(vm);
+    c->fn = c->script;
+
+    arena_da_append(&c->arena, &c->locals, ((Local){OP_POP, 0}));
     // TODO("");
 }
 
@@ -90,9 +109,7 @@ static void error(Compiler *c, const char *msg) {
 static inline Chunk *curChunk(const Compiler *c) { return &c->fn->chunk; }
 
 static inline void emitByte(Compiler *c, uint8_t byte) {
-    UNUSED(c);
-    UNUSED(byte);
-    TODO("");
+    writeChunk(c->vm, curChunk(c), byte, c->token.line);
 }
 
 static inline void emitBytes(Compiler *c, uint8_t byte1, uint8_t byte2) {
@@ -575,12 +592,17 @@ static void compileStmt(Compiler *c, const Stmt *stmt) {
         TODO("STMT_CLASS");
     } break;
     case STMT_FUN: {
+        StmtFn fn = stmt->as.fun;
+
         // TODO: this is not safe from the GC make it safe
-        ObjFn *previous = c->fn;
+        ObjFn *prvFn = c->fn;
+        pushRoot(c->vm, OBJ_VAL(prvFn));
 
         // TODO: new ObjFn
-        StmtFn fn = stmt->as.fun;
+        c->fn = newObjFn(c->vm);
+        c->fn->name = copyString(c->vm, token.items, token.cnt);
         c->fn->upvalueCnt = fn.upvaluesCnt;
+        c->fn->arity = fn.params.cnt;
 
         beginScope(c);
         for (size_t i = 0; i < fn.params.cnt; i++) {
@@ -592,7 +614,7 @@ static void compileStmt(Compiler *c, const Stmt *stmt) {
             compileStmt(c, fn.body.items[i]);
         }
 
-        ObjFn *func = endCompiler(c, previous);
+        ObjFn *func = endCompiler(c, prvFn);
         endScope(c);
 
         emitOpArg(c, OP_CLOSURE, makeConst(c, OBJ_VAL(func)));
@@ -695,5 +717,5 @@ ObjFn *compile(VM *vm, Compiler *c, const Stmts stmts) {
         compileStmt(c, stmts.items[i]);
     }
 
-    return c->hadErr ? NULL : c->fn;
+    return c->hadErr ? NULL : c->script;
 }

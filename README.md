@@ -11,6 +11,7 @@ It is heavily inspired by [Crafting Interpreters](https://craftinginterpreters.c
 - expression based `return if (x == 1) { 23; } else { 4; };`, `var fn = fun(a) { return a + 1; }`
 - errors as values
 - progressively typed
+- custom iterators
 
 # Running
 ```console

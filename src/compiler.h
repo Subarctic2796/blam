@@ -6,11 +6,12 @@
 
 typedef struct VM VM;
 
-#define COMPILER_SIZE 120
+#define COMPILER_SIZE 128
 typedef struct Compiler Compiler;
 
 void initCompiler(Compiler *c);
 void freeCompiler(Compiler *c);
 ObjFn *compile(VM *vm, Compiler *c, const Stmts stmts);
+void markCompiler(VM *vm, Compiler *c);
 
 #endif // INCLUDE_SRC_COMPILER_H_

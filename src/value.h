@@ -22,7 +22,7 @@ typedef enum {
 } ObjType;
 
 static inline const char *ObjTypeString(ObjType t) {
-    static const char *strings[] = {
+    const char *strings[] = {
         "OBJ_BOUND_METHOD", // OBJ_BOUND_METHOD
         "OBJ_CLASS",        // OBJ_CLASS
         "OBJ_CLOSURE",      // OBJ_CLOSURE
@@ -195,7 +195,7 @@ typedef struct {
 } ObjString;
 
 typedef struct {
-    Obj *obj;
+    Obj obj;
     bool recoverable;
     ObjString *msg;
 } ObjError;
@@ -326,10 +326,6 @@ static inline bool valuesEqual(Value a, Value b) {
     default:            VM_UNREACHABLE(); return false;
     }
 #endif
-}
-
-static inline __attribute__((always_inline)) int fsda(int a, int b) {
-    return a + b;
 }
 
 #endif // INCLUDE_SRC_VALUE_H_

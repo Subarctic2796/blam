@@ -1,5 +1,4 @@
 #include <math.h>
-#include <stdbool.h>
 
 #include "ast.h"
 #include "common.h"
@@ -62,15 +61,12 @@ void markCompiler(VM *vm, Compiler *c) {
 
 static void resetCompiler(Compiler *c, VM *vm) {
     Arena arena = c->arena;
-    Locals locals = c->locals;
-    locals.cnt = 0;
     ValueMap constantsTable = c->constantsTable;
 
     *c = (Compiler){0};
 
     c->constantsTable = constantsTable;
     c->vm = vm;
-    c->locals = locals;
     c->arena = arena;
     c->type = FN_SCRIPT;
 

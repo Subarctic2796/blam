@@ -35,9 +35,9 @@ typedef Expr *(*PrefixFn)(Parser *p, bool canAssign);
 typedef Expr *(*InfixFn)(Parser *p, bool canAssign, Expr *lhs);
 
 typedef struct {
-    PrefixFn prefix;
-    InfixFn infix;
-    Precedence prec;
+    const PrefixFn prefix;
+    const InfixFn infix;
+    const Precedence prec;
 } ParseRule;
 
 #define OP_POP           false
@@ -194,12 +194,14 @@ static bool match(Parser *p, TokenType t) {
     return true;
 }
 
-static bool matchAny(Parser *p, size_t n, const TokenType *types) {
+static bool matchAnyImpl(Parser *p, size_t n, const TokenType *types) {
     for (size_t i = 0; i < n; i++) {
         if (match(p, types[i])) return true;
     }
     return false;
 }
+
+#define matchAny(p, types) matchAnyImpl(p, ARRAY_LEN(types), types)
 
 static inline void synchronize(Parser *parser) {
     parser->panicMode = false;
@@ -337,9 +339,7 @@ static int resolveUpvalue(Parser *p, Scope *scope, Token name) {
     }
 
     int upvalue = resolveUpvalue(p, getScope(p, scope->index - 1), name);
-    if (upvalue != -1) {
-        return addUpvalue(p, scope, (uint8_t)upvalue, false);
-    }
+    if (upvalue != -1) return addUpvalue(p, scope, (uint8_t)upvalue, false);
 
     return -1;
 }
@@ -576,7 +576,7 @@ static Expr *subscript(Parser *p, bool canAssign, Expr *lhs) {
     Expr *index = parsePrecedence(p, PREC_OR);
     consume(p, TOKEN_RSQR, "Expect ']' after index");
 
-    if (canAssign && matchAny(p, EQS_LEN, EQS)) {
+    if (canAssign && matchAny(p, EQS)) {
         Token opr = p->prv;
         Expr *value = expression(p);
         value = desugarOp(p, lhs, opr, value);
@@ -589,7 +589,7 @@ static Expr *subscript(Parser *p, bool canAssign, Expr *lhs) {
 static Expr *dot(Parser *p, bool canAssign, Expr *lhs) {
     Token name = consume(p, TOKEN_IDENTIFIER, "Expect property name after '.'");
 
-    if (canAssign && matchAny(p, EQS_LEN, EQS)) {
+    if (canAssign && matchAny(p, EQS)) {
         Token opr = p->prv;
         Expr *value = expression(p);
         value = desugarOp(p, lhs, opr, value);
@@ -653,7 +653,7 @@ static Expr *or_(Parser *p, bool canAssign, Expr *lhs) {
     return newExpr(EXPR_LOGICAL, opr, .lhs = lhs, .rhs = rhs);
 }
 
-static const ParseRule RULES[] = {
+const ParseRule RULES[] = {
     {grouping, call, PREC_CALL},         // TOKEN_LPAREN
     {NULL, NULL, PREC_NONE},             // TOKEN_RPAREN
     {map, NULL, PREC_NONE},              // TOKEN_LBRACE
@@ -729,7 +729,7 @@ static Expr *parsePrecedence(Parser *p, Precedence prec) {
         InfixFn infixRule = getRule(p->prv.type)->infix;
         lhs = infixRule(p, canAssign, lhs);
 
-        if (canAssign && matchAny(p, EQS_LEN, EQS)) {
+        if (canAssign && matchAny(p, EQS)) {
             error(p, "Invalid assignment target");
         }
     }
@@ -921,7 +921,7 @@ static Stmt *forIterStmt(Parser *p) {
     Token first = p->prv;
 
     static const TokenType TYPES[] = {TOKEN_COMMA, TOKEN_IN};
-    if (!matchAny(p, 2, TYPES)) return NULL;
+    if (!matchAny(p, TYPES)) return NULL;
 
     // now know for sure that it is a for in stmt
     ExprIdent index = {SCOPE_NONE, false, -1, p->scopeDepth, {0}};

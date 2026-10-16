@@ -97,7 +97,8 @@ static inline uint32_t hashObject(Obj *obj) {
     case OBJ_ARRAY:
     case OBJ_MAP:
     case OBJ_RANGE:
-    case __OBJ_CNT:        VM_UNREACHABLE(); return 0;
+    case __OBJ_CNT:
+    default:               VM_UNREACHABLE(); return 0;
     }
 }
 
@@ -127,7 +128,7 @@ void freeValueMap(VM *vm, ValueMap *map) {
 
 static ValueEntry *findEntry(ValueEntry *entries, int cap, Value key) {
     uint32_t idx = hashValue(key) & (cap - 1);
-    ValueEntry *tombstone;
+    ValueEntry *tombstone = NULL;
 
     for (;;) {
         ValueEntry *entry = &entries[idx];

@@ -65,7 +65,7 @@ typedef enum {
 } TokenType;
 
 static inline const char *tokenTypeString(TokenType t) {
-    static const char *strings[] = {
+    const char *strings[] = {
         "TOKEN_LPAREN",     // TOKEN_LPAREN
         "TOKEN_RPAREN",     // TOKEN_RPAREN
         "TOKEN_LBRACE",     // TOKEN_LBRACE

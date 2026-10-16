@@ -3,16 +3,11 @@
 #include "common.h"
 #include "token.h"
 
-static inline Expr *allocExpr(Arena *a, ExprType type, Token tok) {
+Expr *newExprOpts(Arena *a, ExprType type, Token tok, ExprOpts opts) {
     Expr *ret = (Expr *)arena_alloc(a, sizeof(*ret));
     *ret = (Expr){0};
     ret->token = tok;
     ret->type = type;
-    return ret;
-}
-
-Expr *newExprOpts(Arena *a, ExprType type, Token tok, ExprOpts opts) {
-    Expr *ret = allocExpr(a, type, tok);
     switch (type) {
     case EXPR_HASH:
     case EXPR_ARRAY:    ret->as.elements = opts.elements; break;
@@ -47,16 +42,11 @@ Expr *newExprOpts(Arena *a, ExprType type, Token tok, ExprOpts opts) {
     return ret;
 }
 
-static inline Stmt *allocStmt(Arena *a, StmtType type, Token tok) {
+Stmt *newStmtOpts(Arena *a, StmtType type, Token tok, StmtOpts opts) {
     Stmt *ret = (Stmt *)arena_alloc(a, sizeof(*ret));
     *ret = (Stmt){0};
     ret->token = tok;
     ret->type = type;
-    return ret;
-}
-
-Stmt *newStmtOpts(Arena *a, StmtType type, Token tok, StmtOpts opts) {
-    Stmt *ret = allocStmt(a, type, tok);
     switch (type) {
     case STMT_BLOCK:   ret->as.block = opts.block; break;
     case STMT_CONTROL: ret->as.value = opts.value; break;
@@ -331,8 +321,8 @@ void printStmt(const Stmt *stmt) {
     }
 }
 
-static const string RHS_INDENT = {NULL, ~0};
-static const string LHS_INDENT = {NULL, ~1};
+const string RHS_INDENT = {NULL, ~0};
+const string LHS_INDENT = {NULL, ~1};
 
 // name must end with a '('
 #define prettyPrintStart(ap, name)                                             \

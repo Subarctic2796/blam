@@ -10,14 +10,16 @@ typedef enum {
 } OpCode;
 
 static inline const char *OpcodeStr(const OpCode op) {
-    static const char *strings[] = {
-#define OPCODE(name) "OP_##name",
+#define TO_STRING(x) #x
+    const char *strings[] = {
+#define OPCODE(name) TO_STRING(OP_##name),
 #include "opcodeCodes.h"
 #undef OPCODE
     };
     static_assert(ARRAY_LEN(strings) == OP_CLOSURE + 1,
                   "number of Opcodes changed");
     return strings[op];
+#undef TO_STRING
 }
 
 // returns -1 for OP_CLOSURE

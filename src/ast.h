@@ -279,7 +279,7 @@ void printStmt(const Stmt *stmt);
 void astPrettyPrint(AstPrettyPrinter *ap, const Stmts prog);
 
 static inline const char *FnTypeStr(const FnType t) {
-    static const char *strings[] = {
+    const char *strings[] = {
         "FN_NONE",   // FN_NONE
         "FN_SCRIPT", // FN_SCRIPT
         "FN_FUNC",   // FN_FUNC
@@ -293,7 +293,7 @@ static inline const char *FnTypeStr(const FnType t) {
 }
 
 static inline const char *ScopeTypeStr(const ScopeType t) {
-    static const char *strings[] = {
+    const char *strings[] = {
         "SCOPE_NONE",    // SCOPE_NONE
         "SCOPE_GLOBAL",  // SCOPE_GLOBAL
         "SCOPE_LOCAL",   // SCOPE_LOCAL

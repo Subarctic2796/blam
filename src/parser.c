@@ -533,8 +533,6 @@ static Expr *this_(Parser *p, bool canAssign) {
     UNUSED(canAssign);
     if (p->curCLS == CLS_NONE) error(p, "Can't use 'this' outside of a class");
     namedVar(p, p->prv);
-    printToken(p->cur);
-    puts("");
     return newExpr(EXPR_THIS, p->prv);
 }
 
@@ -1012,9 +1010,9 @@ static Stmt *forStmt(Parser *p) {
 
     if (incr != &NULL_EXPR) {
         Stmts tmp = {0};
-        arena_da_append(&p->arena, &tmp, body);
-        Stmt *incrStmt = newStmt(STMT_EXPR, NULL_TOKEN, .expr = incr);
-        arena_da_append(&p->arena, &tmp, incrStmt);
+        const Stmt *BODY_INCR[] = {
+            body, newStmt(STMT_EXPR, NULL_TOKEN, .expr = incr)};
+        arena_da_append_many(&p->arena, &tmp, BODY_INCR, ARRAY_LEN(BODY_INCR));
 
         body = newStmt(STMT_BLOCK, NULL_TOKEN, .block = tmp);
     }
@@ -1027,9 +1025,8 @@ static Stmt *forStmt(Parser *p) {
 
     if (init != &NULL_STMT) {
         Stmts tmp = {0};
-        const Stmt *INIT_BODY_ARR[] = {init, body};
-        arena_da_append_many(&p->arena, &tmp, INIT_BODY_ARR,
-                             ARRAY_LEN(INIT_BODY_ARR));
+        const Stmt *INIT_BODY[] = {init, body};
+        arena_da_append_many(&p->arena, &tmp, INIT_BODY, ARRAY_LEN(INIT_BODY));
 
         body = newStmt(STMT_BLOCK, NULL_TOKEN, .block = tmp);
     }

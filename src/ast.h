@@ -17,6 +17,7 @@ typedef struct Expr Expr;
 typedef struct Stmt Stmt;
 
 typedef enum {
+    EXPR_NONE,
     EXPR_ARRAY,
     EXPR_ASSIGN,
     EXPR_BINARY,
@@ -143,6 +144,7 @@ typedef struct {
 } ExprOpts;
 
 typedef enum {
+    STMT_NONE,
     STMT_BLOCK,
     STMT_CLASS,
     STMT_CONTROL,
@@ -198,9 +200,9 @@ typedef struct {
 
 typedef struct {
     Expr *iter;
+    Stmt *body;
     ExprIdent index;
     ExprIdent name;
-    Stmt *body;
 } StmtForIn;
 
 typedef struct {
@@ -265,12 +267,10 @@ typedef struct {
     strings lines;
 } AstPrettyPrinter;
 
-#define newExpr(ty, tk, ...)                                                   \
-    newExprOpts(&p->arena, ty, tk, (ExprOpts){__VA_ARGS__})
-Expr *newExprOpts(Arena *a, ExprType type, Token tok, ExprOpts opts);
+extern Expr NULL_EXPR;
+extern Stmt NULL_STMT;
 
-#define newStmt(ty, tk, ...)                                                   \
-    newStmtOpts(&p->arena, ty, tk, (StmtOpts){__VA_ARGS__})
+Expr *newExprOpts(Arena *a, ExprType type, Token tok, ExprOpts opts);
 Stmt *newStmtOpts(Arena *a, StmtType type, Token tok, StmtOpts opts);
 
 void printExpr(const Expr *expr);

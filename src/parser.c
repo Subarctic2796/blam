@@ -5,6 +5,13 @@
 #include "lexer.h"
 #include "token.h"
 
+#define newExpr(ty, tk, ...)                                                   \
+    newExprOpts(&p->arena, ty, tk, (ExprOpts){__VA_ARGS__})
+#define newStmt(ty, tk, ...)                                                   \
+    newStmtOpts(&p->arena, ty, tk, (StmtOpts){__VA_ARGS__})
+
+const Token NULL_TOKEN = {0};
+
 typedef enum {
     CLS_NONE,
     CLS_CLASS,
@@ -177,7 +184,7 @@ static Token consume(Parser *p, TokenType t, const char *msg) {
         return p->prv;
     }
     errorAtCur(p, msg);
-    return (Token){0};
+    return NULL_TOKEN;
 }
 
 static inline void consumeSemiColon(Parser *p, const char *msg) {
@@ -718,7 +725,7 @@ static Expr *parsePrecedence(Parser *p, Precedence prec) {
     PrefixFn prefixRule = getRule(p->prv.type)->prefix;
     if (prefixRule == NULL) {
         error(p, "Expect expression");
-        return NULL;
+        return &NULL_EXPR;
     }
 
     bool canAssign = prec <= PREC_ASSIGNMENT;
@@ -849,7 +856,9 @@ static Stmt *classDecl(Parser *p) {
 
         rewindParser(p, mark);
         Stmt *method_ = method(p);
-        if (method_ != NULL) arena_da_append(&p->arena, &methods, method_);
+        if (method_ != &NULL_STMT) {
+            arena_da_append(&p->arena, &methods, method_);
+        }
     }
 
     consume(p, TOKEN_RBRACE, "Expect '}' after class body");
@@ -870,7 +879,7 @@ static Stmt *varDecl(Parser *p) {
     Token name = consume(p, TOKEN_IDENTIFIER, "Expect variable name");
     declareVariable(p);
 
-    Expr *init = NULL;
+    Expr *init = &NULL_EXPR;
     if (match(p, TOKEN_EQ)) init = expression(p);
 
     consumeSemiColon(p, "variable declaration");
@@ -881,7 +890,7 @@ static Stmt *varDecl(Parser *p) {
 }
 
 static Stmt *declaration(Parser *p) {
-    Stmt *stmt = NULL;
+    Stmt *stmt = &NULL_STMT;
     if (match(p, TOKEN_CLASS)) {
         stmt = classDecl(p);
     } else if (match(p, TOKEN_FUN)) {
@@ -915,13 +924,13 @@ static Stmt *forIterStmt(Parser *p) {
     //     }
     // }
 
-    if (!match(p, TOKEN_VAR)) return NULL;
-    if (!match(p, TOKEN_IDENTIFIER)) return NULL;
+    if (!match(p, TOKEN_VAR)) return &NULL_STMT;
+    if (!match(p, TOKEN_IDENTIFIER)) return &NULL_STMT;
 
     Token first = p->prv;
 
     static const TokenType TYPES[] = {TOKEN_COMMA, TOKEN_IN};
-    if (!matchAny(p, TYPES)) return NULL;
+    if (!matchAny(p, TYPES)) return &NULL_STMT;
 
     // now know for sure that it is a for in stmt
     ExprIdent index = {SCOPE_NONE, false, -1, p->scopeDepth, {0}};
@@ -961,7 +970,7 @@ static Stmt *forIterStmt(Parser *p) {
 
     endScope(p); // the outer scope
 
-    return newStmt(STMT_FOR_IN, ((Token){0}), .iter = iter, .index = index,
+    return newStmt(STMT_FOR_IN, NULL_TOKEN, .iter = iter, .index = index,
                    .name = name, .bodyw = body);
 }
 
@@ -973,27 +982,27 @@ static Stmt *forStmt(Parser *p) {
     ParserMark mark = saveParser(p);
     // parse for iter stmts
     Stmt *stmt = forIterStmt(p);
-    if (stmt != NULL) return stmt;
+    if (stmt != &NULL_STMT) return stmt;
 
     // restore parser if it wasn't a for iter stmt
     rewindParser(p, mark);
 
     // parse a normal for loop
-    Stmt *init = NULL;
+    Stmt *init = &NULL_STMT;
     if (match(p, TOKEN_SEMICOLON)) {
         // no initializer
     } else if (match(p, TOKEN_VAR)) {
         init = varDecl(p);
     } else {
         Expr *initExpr = expression(p);
-        init = newStmt(STMT_EXPR, ((Token){0}), .expr = initExpr);
+        init = newStmt(STMT_EXPR, NULL_TOKEN, .expr = initExpr);
     }
 
-    Expr *cond = NULL;
+    Expr *cond = &NULL_EXPR;
     if (!match(p, TOKEN_SEMICOLON)) cond = expression(p);
     consumeSemiColon(p, "loop condition");
 
-    Expr *incr = NULL;
+    Expr *incr = &NULL_EXPR;
     if (!match(p, TOKEN_RPAREN)) incr = expression(p);
     consume(p, TOKEN_RPAREN, "Expect ')' after for clauses");
 
@@ -1001,27 +1010,28 @@ static Stmt *forStmt(Parser *p) {
 
     Stmt *body = statement(p);
 
-    if (incr != NULL) {
+    if (incr != &NULL_EXPR) {
         Stmts tmp = {0};
         arena_da_append(&p->arena, &tmp, body);
-        Stmt *incrStmt = newStmt(STMT_EXPR, ((Token){0}), .expr = incr);
+        Stmt *incrStmt = newStmt(STMT_EXPR, NULL_TOKEN, .expr = incr);
         arena_da_append(&p->arena, &tmp, incrStmt);
 
-        body = newStmt(STMT_BLOCK, ((Token){0}), .block = tmp);
+        body = newStmt(STMT_BLOCK, NULL_TOKEN, .block = tmp);
     }
 
-    if (cond == NULL) {
-        Token tok = {TOKEN_TRUE, .lexeme = svLit("true")};
+    if (cond == &NULL_EXPR) {
+        Token tok = {TOKEN_TRUE, -1, .lexeme = svLit("true")};
         cond = newExpr(EXPR_LITERAL, tok);
     }
-    body = newStmt(STMT_WHILE, ((Token){0}), .cond = cond, .bodyw = body);
+    body = newStmt(STMT_WHILE, NULL_TOKEN, .cond = cond, .bodyw = body);
 
-    if (init != NULL) {
+    if (init != &NULL_STMT) {
         Stmts tmp = {0};
-        arena_da_append(&p->arena, &tmp, init);
-        arena_da_append(&p->arena, &tmp, body);
+        const Stmt *INIT_BODY_ARR[] = {init, body};
+        arena_da_append_many(&p->arena, &tmp, INIT_BODY_ARR,
+                             ARRAY_LEN(INIT_BODY_ARR));
 
-        body = newStmt(STMT_BLOCK, ((Token){0}), .block = tmp);
+        body = newStmt(STMT_BLOCK, NULL_TOKEN, .block = tmp);
     }
 
     endScope(p);
@@ -1038,7 +1048,7 @@ static Stmt *ifStmt(Parser *p) {
 
     Stmt *then = statement(p);
 
-    Stmt *elze = NULL;
+    Stmt *elze = &NULL_STMT;
     if (match(p, TOKEN_ELSE)) elze = statement(p);
 
     return newStmt(STMT_IF, tok, .cond = cond, .then = then, .elze = elze);
@@ -1089,7 +1099,7 @@ static Stmt *statement(Parser *p) {
     } else if (match(p, TOKEN_BREAK)) {
         if (p->loopDepth == 0) {
             error(p, "Can't use 'break' outside a loop");
-            return NULL;
+            return &NULL_STMT;
         }
         Token tok = p->prv;
         consumeSemiColon(p, "break");
@@ -1097,7 +1107,7 @@ static Stmt *statement(Parser *p) {
     } else if (match(p, TOKEN_CONTINUE)) {
         if (p->loopDepth == 0) {
             error(p, "Can't use 'continue' outside a loop");
-            return NULL;
+            return &NULL_STMT;
         }
         Token tok = p->prv;
         consumeSemiColon(p, "continue");
@@ -1117,7 +1127,7 @@ bool parse(Parser *p, const char *src) {
     beginFunc(p, FN_SCRIPT);
     while (!match(p, TOKEN_EOF)) {
         Stmt *stmt = declaration(p);
-        if (stmt != NULL) arena_da_append(&p->arena, &p->stmts, stmt);
+        if (stmt != &NULL_STMT) arena_da_append(&p->arena, &p->stmts, stmt);
     }
     endFunc(p);
 

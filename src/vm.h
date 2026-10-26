@@ -35,6 +35,12 @@ typedef enum {
     INTERPRET_RUNTIME_ERR,
 } InterpretResult;
 
+typedef struct {
+    ObjClosure *clos;
+    uint8_t *ip;
+    Value *slots;
+} CallFrame;
+
 typedef struct VM {
     Parser *parser;
     Compiler *compiler;
@@ -46,9 +52,17 @@ typedef struct VM {
     int grayCnt, grayCap;
     Obj **grayStack;
 
+    CallFrame *frames;
+    int frameCnt;
+
+    Value *stack;
+    Value *sp;
+
     ValueMap strings;
     ValueMap globalNames;
     ValueArray globalValues;
+    ObjString *initString;
+    ObjUpvalue *openUpvalues;
 
     int tempCnt;
     Value tempRoots[MAX_TEMP_ROOTS];

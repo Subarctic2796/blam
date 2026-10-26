@@ -3,12 +3,19 @@
 #include "common.h"
 #include "token.h"
 
+Expr NULL_EXPR = {0};
+Stmt NULL_STMT = {0};
+
 Expr *newExprOpts(Arena *a, ExprType type, Token tok, ExprOpts opts) {
+    if (type == EXPR_NONE) return &NULL_EXPR;
     Expr *ret = (Expr *)arena_alloc(a, sizeof(*ret));
     *ret = (Expr){0};
     ret->token = tok;
     ret->type = type;
     switch (type) {
+    case EXPR_NONE:
+        UNREACHABLE("somehow managed to allocate space for the NULL_EXPR");
+        break;
     case EXPR_HASH:
     case EXPR_ARRAY:    ret->as.elements = opts.elements; break;
     case EXPR_SUPER:    ret->as.method = opts.method; break;
@@ -43,11 +50,15 @@ Expr *newExprOpts(Arena *a, ExprType type, Token tok, ExprOpts opts) {
 }
 
 Stmt *newStmtOpts(Arena *a, StmtType type, Token tok, StmtOpts opts) {
+    if (type == STMT_NONE) return &NULL_STMT;
     Stmt *ret = (Stmt *)arena_alloc(a, sizeof(*ret));
     *ret = (Stmt){0};
     ret->token = tok;
     ret->type = type;
     switch (type) {
+    case STMT_NONE:
+        UNREACHABLE("somehow managed to allocate space for the NULL_STMT");
+        break;
     case STMT_BLOCK:   ret->as.block = opts.block; break;
     case STMT_CONTROL: ret->as.value = opts.value; break;
     case STMT_EXPR:    ret->as.expr = opts.expr; break;
@@ -67,7 +78,7 @@ Stmt *newStmtOpts(Arena *a, StmtType type, Token tok, StmtOpts opts) {
         break;
     case STMT_FOR_IN:
         ret->as.forIn =
-            (StmtForIn){opts.iter, opts.index, opts.name, opts.bodyw};
+            (StmtForIn){opts.iter, opts.bodyw, opts.index, opts.name};
         break;
     }
     return ret;
@@ -76,6 +87,7 @@ Stmt *newStmtOpts(Arena *a, StmtType type, Token tok, StmtOpts opts) {
 void printExpr(const Expr *expr) {
     Token tok = expr->token;
     switch (expr->type) {
+    case EXPR_NONE:  printf("(NULL_EXPR)"); break;
     case EXPR_ARRAY: {
         Exprs elems = expr->as.elements;
         if (elems.cnt == 0) {
@@ -195,6 +207,7 @@ void printExpr(const Expr *expr) {
 void printStmt(const Stmt *stmt) {
     Token tok = stmt->token;
     switch (stmt->type) {
+    case STMT_NONE:  printf("(NULL_STMT)"); break;
     case STMT_BLOCK: {
         Stmts block = stmt->as.block;
         printf("(block ");
@@ -232,7 +245,7 @@ void printStmt(const Stmt *stmt) {
         switch (tok.type) {
         case TOKEN_RETURN: {
             printf("(return");
-            if (stmt->as.value != NULL) {
+            if (stmt->as.value != &NULL_EXPR) {
                 putchar(' ');
                 printExpr(stmt->as.value);
             }
@@ -266,7 +279,7 @@ void printStmt(const Stmt *stmt) {
     } break;
     case STMT_IF: {
         StmtIf if_ = stmt->as.if_;
-        if (if_.elze != NULL) {
+        if (if_.elze != &NULL_STMT) {
             printf("(if ");
             printExpr(if_.cond);
             putchar(' ');
@@ -290,7 +303,7 @@ void printStmt(const Stmt *stmt) {
         ExprIdent ident = stmt->as.var.name;
         printf("(var %.*s[%s:%d:%d]", (int)tok.cnt, tok.items,
                ScopeTypeStr(ident.scope), ident.depth, ident.index);
-        if (stmt->as.var.init != NULL) {
+        if (stmt->as.var.init != &NULL_EXPR) {
             printf(" = ");
             printExpr(stmt->as.var.init);
         }
@@ -360,6 +373,7 @@ static void prettyPrintAddf(AstPrettyPrinter *ap, const char *fmt, ...) {
 static void prettyPrintExpr(AstPrettyPrinter *ap, const Expr *expr) {
     Token tok = expr->token;
     switch (expr->type) {
+    case EXPR_NONE: prettyPrintAdd(ap, "NULL_EXPR"); break;
     case EXPR_THIS: prettyPrintAdd(ap, "This"); break;
     case EXPR_LITERAL:
         prettyPrintAddf(ap, "Literal(%.*s)", (int)tok.cnt, tok.items);
@@ -522,7 +536,7 @@ static void prettyPrintExpr(AstPrettyPrinter *ap, const Expr *expr) {
         prettyPrintAdd(ap, "Then=");
         prettyPrintStmt(ap, if_.then);
 
-        if (if_.elze != NULL) {
+        if (if_.elze != &NULL_STMT) {
             prettyPrintAdd(ap, ",");
             prettyPrintAdd(ap, "Else=");
             prettyPrintStmt(ap, if_.elze);
@@ -558,6 +572,7 @@ static void prettyPrintExpr(AstPrettyPrinter *ap, const Expr *expr) {
 static void prettyPrintStmt(AstPrettyPrinter *ap, const Stmt *stmt) {
     Token tok = stmt->token;
     switch (stmt->type) {
+    case STMT_NONE: prettyPrintAdd(ap, "NULL_STMT"); break;
     case STMT_EXPR: {
         prettyPrintStart(ap, "ExprStmt(");
         prettyPrintExpr(ap, stmt->as.expr);
@@ -571,7 +586,7 @@ static void prettyPrintStmt(AstPrettyPrinter *ap, const Stmt *stmt) {
         prettyPrintAddf(ap, "name=\"%.*s\"[%s:%d:%d],", (int)tok.cnt, tok.items,
                         ScopeTypeStr(ident.scope), ident.depth, ident.index);
 
-        if (var.init != NULL) {
+        if (var.init != &NULL_EXPR) {
             prettyPrintAdd(ap, "init=");
             prettyPrintExpr(ap, var.init);
         }
@@ -631,7 +646,7 @@ static void prettyPrintStmt(AstPrettyPrinter *ap, const Stmt *stmt) {
 #pragma GCC diagnostic ignored "-Wswitch-enum"
         switch (tok.type) {
         case TOKEN_RETURN: {
-            if (stmt->as.value != NULL) {
+            if (stmt->as.value != &NULL_EXPR) {
                 prettyPrintStart(ap, "Return(");
                 prettyPrintExpr(ap, stmt->as.value);
                 prettyPrintEnd(ap);
@@ -691,7 +706,7 @@ static void prettyPrintStmt(AstPrettyPrinter *ap, const Stmt *stmt) {
         prettyPrintAdd(ap, "Then=");
         prettyPrintStmt(ap, if_.then);
 
-        if (if_.elze != NULL) {
+        if (if_.elze != &NULL_STMT) {
             prettyPrintAdd(ap, "Else=");
             prettyPrintStmt(ap, if_.elze);
         }

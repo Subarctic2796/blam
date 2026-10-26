@@ -111,6 +111,13 @@
         (da)->cnt += (new_items_count);                                        \
     } while (0)
 
+#define da_remove_unordered(da, i)                                             \
+    do {                                                                       \
+        size_t j = (i);                                                        \
+        assert(j < (da)->cnt);                                                 \
+        (da)->items[j] = (da)->items[--(da)->cnt];                             \
+    } while (0)
+
 #define free_string(s) free((void *)(s).items)
 
 #define HASH_TYPES_MAX_LOAD 0.75

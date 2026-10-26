@@ -64,9 +64,184 @@ void freeChunk(VM *vm, Chunk *chunk) {
     *chunk = (Chunk){0};
 }
 
+static inline int fnStrLen(const ObjFn *fn) {
+    if (fn->name == NULL) return sizeof("<script>") - 1;
+    return fn->name->cnt + ((sizeof("<fn ") - 1) + (sizeof(">") - 1));
+}
+
+int objectStringLength(Value value) {
+    switch (OBJ_TYPE(value)) {
+    case OBJ_ARRAY: {
+        ValueArray elms = AS_ARRAY(value)->array;
+        if (elms.cnt == 0) return sizeof("[]") - 1;
+        // int total = 2 + ((elms.cnt - 1) * 2);
+        int total = elms.cnt * 2;
+        for (int i = 0; i < elms.cnt; i++) {
+            total += valueStringLength(elms.items[i]);
+        }
+        return total;
+    }
+    case OBJ_MAP: {
+        ValueMap elms = AS_MAP(value)->map;
+        if (elms.cnt == 0) return sizeof("{}") - 1;
+        // int total = 2 + (elms.cnt * 2) + ((elms.cnt - 1) * 2);
+        int total = elms.cnt * 4;
+        for (int i = 0; i < elms.cnt; i++) {
+            ValueEntry entry = elms.items[i];
+            if (IS_EMPTY(entry.key)) continue;
+
+            total += valueStringLength(entry.key);
+            total += valueStringLength(entry.value);
+        }
+        return total;
+    }
+    case OBJ_UPVALUE: return sizeof("upvalue") - 1;
+    case OBJ_NATIVE:  return sizeof("<native fn>") - 1;
+    case OBJ_CLASS:   return AS_CLASS(value)->name->cnt;
+    case OBJ_INSTANCE:
+        return AS_INSTANCE(value)->klass->name->cnt + sizeof(" instance") - 1;
+    case OBJ_STRING:       return AS_STRING(value)->cnt;
+    case OBJ_ERROR:        return AS_ERROR(value)->msg->cnt;
+    case OBJ_CLOSURE:      return fnStrLen(AS_CLOSURE(value)->fn);
+    case OBJ_FUNCTION:     return fnStrLen(AS_FUNCTION(value));
+    case OBJ_BOUND_METHOD: /*return
+                              fnStrLen(AS_BOUND_METHOD(value)->method->fn);*/
+    case OBJ_RANGE:        /*{
+            const ObjRange *range = AS_RANGE(value);
+            return snprintf(NULL, 0, "range(%g, %g, %g)", range->start, range->stop,
+                            range->step);
+        }*/
+    case __OBJ_CNT:
+        STUB(ObjTypeString(OBJ_TYPE(value)));
+        return -1;
+        // case __OBJ_CNT: VM_UNREACHABLE(); return -1;
+    }
+}
+
+int valueStringLength(Value value) {
+#ifdef NAN_BOXING
+    if (IS_UNDEFINED(value)) {
+        return sizeof("<undefined>") - 1;
+    } else if (IS_BOOL(value)) {
+        return AS_BOOL(value) ? sizeof("true") - 1 : sizeof("false") - 1;
+    } else if (IS_NIL(value)) {
+        return sizeof("nil") - 1;
+    } else if (IS_NUMBER(value)) {
+        return snprintf(NULL, 0, "%.14g", AS_NUMBER(value));
+    } else if (IS_EMPTY(value)) {
+        return sizeof("<empty>") - 1;
+    } else if (IS_OBJ(value)) {
+        return objectStringLength(value);
+    }
+    VM_UNREACHABLE();
+    return -1;
+#else
+    switch (value.type) {
+    case VAL_UNDEFINED: return sizeof("<undefined>") - 1;
+    case VAL_BOOL:
+        return AS_BOOL(value) ? sizeof("true") - 1 : sizeof("false") - 1;
+    case VAL_NIL:    return sizeof("nil") - 1;
+    case VAL_EMPTY:  return sizeof("<empty>") - 1;
+    case VAL_NUMBER: return snprintf(NULL, 0, "%.14g", AS_NUMBER(value));
+    case VAL_OBJ:    return objectStringLength(value);
+    default:         VM_UNREACHABLE(); return -1;
+    }
+#endif /* ifdef NAN_BOXING */
+}
+
+static inline void printFunc(const ObjFn *fn) {
+    if (fn->name == NULL) {
+        printf("<script>");
+        return;
+    }
+    printf("<fn %s>", fn->name->items);
+}
+
+static void printObject(Value value) {
+    ObjType type = OBJ_TYPE(value);
+    switch (type) {
+    case OBJ_ARRAY: {
+        ValueArray elms = AS_ARRAY(value)->array;
+        if (elms.cnt == 0) {
+            printf("[]");
+            return;
+        }
+
+        printf("[");
+        for (int i = 0; i < elms.cnt; i++) {
+            printValue(elms.items[i]);
+            if (i != elms.cnt - 1) printf(", ");
+        }
+        printf("]");
+    } break;
+    case OBJ_MAP: {
+        ValueMap elms = AS_MAP(value)->map;
+        if (elms.cnt == 0) {
+            printf("{}");
+            return;
+        }
+
+        printf("{");
+        bool first = true;
+        for (int i = 0; i < elms.cap; i++) {
+            ValueEntry entry = elms.items[i];
+            if (IS_EMPTY(entry.key)) continue;
+            if (!first) printf(", ");
+            first = false;
+            printValue(entry.key);
+            printf(": ");
+            printValue(entry.value);
+        }
+        printf("}");
+    } break;
+    case OBJ_INSTANCE:
+        printf("%s instance", AS_INSTANCE(value)->klass->name->items);
+        break;
+    case OBJ_CLASS:    printf("%s", AS_CLASS(value)->name->items); break;
+    case OBJ_STRING:   printf("%s", AS_CSTRING(value)); break;
+    case OBJ_ERROR:    printf("%s", AS_ERROR_MSG(value)); break;
+    case OBJ_NATIVE:   printf("<native fn>"); break;
+    case OBJ_UPVALUE:  printf("upvalue"); break;
+    case OBJ_CLOSURE:  printFunc(AS_CLOSURE(value)->fn); break;
+    case OBJ_FUNCTION: printFunc(AS_FUNCTION(value)); break;
+    case OBJ_BOUND_METHOD:
+        /* printFunc(AS_BOUND_METHOD(value)->method->fn); break; */
+    case OBJ_RANGE: /*{
+     const ObjRange *range = AS_RANGE(value);
+     printf("range(%g, %g, %g)", range->start, range->stop, range->step);
+ } break; */
+    case __OBJ_CNT:
+        STUB(ObjTypeString(type));
+        break;
+        // case __OBJ_CNT: VM_UNREACHABLE(); break;
+    }
+}
+
 void printValue(Value value) {
-    UNUSED(value);
-    STUB("");
+#ifdef NAN_BOXING
+    if (IS_BOOL(value)) {
+        printf(AS_BOOL(value) ? "true" : "false");
+    } else if (IS_NIL(value)) {
+        printf("nil");
+    } else if (IS_EMPTY(value)) {
+        printf("<empty>");
+    } else if (IS_UNDEFINED(value)) {
+        printf("<undefined>");
+    } else if (IS_NUMBER(value)) {
+        printf("%g", AS_NUMBER(value));
+    } else if (IS_OBJ(value)) {
+        printObject(value);
+    }
+#else
+    switch (value.type) {
+    case VAL_UNDEFINED: printf("<undefined>"); break;
+    case VAL_EMPTY:     printf("<empty>"); break;
+    case VAL_NIL:       printf("nil"); break;
+    case VAL_BOOL:      printf(AS_BOOL(value) ? "true" : "false"); break;
+    case VAL_NUMBER:    printf("%g", AS_NUMBER(value)); break;
+    case VAL_OBJ:       printObject(value); break;
+    }
+#endif /* ifdef NAN_BOXING */
 }
 
 static inline uint32_t hashNumber(double value) {
@@ -250,7 +425,6 @@ void freeValueArray(VM *vm, ValueArray *array) {
 // OBJECTS
 ObjFn *newObjFn(VM *vm) {
     ObjFn *fn = ALLOC_OBJ(ObjFn, OBJ_FUNCTION);
-    *fn = (ObjFn){0};
     return fn;
 }
 

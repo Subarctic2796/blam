@@ -163,9 +163,9 @@ typedef struct {
 #define AS_MAP(value)          ((ObjMap *)AS_OBJ(value))
 #define AS_RANGE(value)        ((ObjRange *)AS_OBJ(value))
 #define AS_STRING(value)       ((ObjString *)AS_OBJ(value))
-#define AS_CSTRING(value)      (((ObjString *)AS_OBJ(value))->chars)
+#define AS_CSTRING(value)      (((ObjString *)AS_OBJ(value))->items)
 #define AS_ERROR(value)        ((ObjError *)AS_OBJ(value))
-#define AS_ERROR_MSG(value)    (((ObjError *)AS_OBJ(value))->msg->chars)
+#define AS_ERROR_MSG(value)    (((ObjError *)AS_OBJ(value))->msg->items)
 
 typedef struct {
     Value key;
@@ -279,6 +279,11 @@ int getLine(const Chunk *chunk, int offset);
 void writeChunk(VM *vm, Chunk *chunk, uint8_t byte, int line);
 void freeChunk(VM *vm, Chunk *chunk);
 
+// determine the length of the string, that results from turning value into its
+// string representation
+int valueStringLength(Value value);
+// same as valueStringLength but for objects
+int objectStringLength(Value value);
 void printValue(Value value);
 uint32_t hashValue(Value value);
 

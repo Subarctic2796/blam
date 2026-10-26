@@ -184,9 +184,7 @@ static inline int getArgCount(const uint8_t *code, const ValueArray constants,
 }
 
 static inline void initLoop(Compiler *c, Loop *loop) {
-    *loop = (Loop){
-        c->loop, curChunk(c)->cnt, 0, -1, c->scopeDepth,
-    };
+    *loop = (Loop){c->loop, curChunk(c)->cnt, 0, -1, c->scopeDepth};
     c->loop = loop;
 }
 
@@ -297,7 +295,8 @@ static inline uint16_t syntheticIdentifierConst(Compiler *c, stringView name,
                                                 bool isVar) {
     Token tok = syntheticToken(name);
     ExprIdent ident = {SCOPE_NONE, false, -1, -1, tok};
-    return indentifierConst(c, ident, isVar ? IDENT_VAR : IDENT_IDENT, NULL);
+    uint16_t dummy = 0;
+    return indentifierConst(c, ident, isVar ? IDENT_VAR : IDENT_IDENT, &dummy);
 }
 
 static void declareVar(Compiler *c, Token tok) {
@@ -371,7 +370,8 @@ static void compileIdent(Compiler *c, ExprIdent ident, bool isAssign) {
     case SCOPE_GLOBAL:  {
         // TODO: resolve index see if global exists
         op = isAssign ? OP_SET_GLOBAL : OP_GET_GLOBAL;
-        ident.index = indentifierConst(c, ident, IDENT_VAR, NULL);
+        uint16_t dummy = 0;
+        ident.index = indentifierConst(c, ident, IDENT_VAR, &dummy);
     } break;
     case SCOPE_NONE:
     case __SCOPE_CNT:
@@ -389,6 +389,7 @@ static void compileExpr(Compiler *c, const Expr *expr) {
     c->token = token;
 
     switch (expr->type) {
+    case EXPR_NONE:     return;
     case EXPR_GROUPING: compileExpr(c, expr->as.group); break;
     case EXPR_LITERAL:  compileLiteral(c, token); break;
     case EXPR_IDENT:    compileIdent(c, expr->as.ident, c->isAssign); break;
@@ -511,7 +512,7 @@ static inline void compileControlStmt(Compiler *c, const Stmt *stmt) {
 #pragma GCC diagnostic ignored "-Wswitch-enum"
     switch (stmt->token.type) {
     case TOKEN_RETURN: {
-        if (stmt->as.value == NULL) {
+        if (stmt->as.value == &NULL_EXPR) {
             emitReturn(c);
         } else {
             compileExpr(c, stmt->as.value);
@@ -537,6 +538,7 @@ static void compileStmt(Compiler *c, const Stmt *stmt) {
     Token token = stmt->token;
     c->token = token;
     switch (stmt->type) {
+    case STMT_NONE:    return;
     case STMT_CONTROL: compileControlStmt(c, stmt); break;
     case STMT_EXPR:    {
         compileExpr(c, stmt->as.expr);
@@ -580,7 +582,7 @@ static void compileStmt(Compiler *c, const Stmt *stmt) {
         patchJump(c, thenJump);
         emitPop(c); // false branch pop
 
-        if (if_.elze != NULL) compileStmt(c, if_.elze);
+        if (if_.elze != &NULL_STMT) compileStmt(c, if_.elze);
         patchJump(c, elseJump);
     } break;
     case STMT_CLASS: {
@@ -625,7 +627,7 @@ static void compileStmt(Compiler *c, const Stmt *stmt) {
     } break;
     case STMT_VAR: {
         StmtVar var = stmt->as.var;
-        if (var.init != NULL) {
+        if (var.init != &NULL_EXPR) {
             c->isAssign = true;
             compileExpr(c, var.init);
         } else {
@@ -639,7 +641,7 @@ static void compileStmt(Compiler *c, const Stmt *stmt) {
             markInit(c);
         }
 
-        if (var.init != NULL) c->isAssign = false;
+        if (var.init != &NULL_EXPR) c->isAssign = false;
         TODO("STMT_VAR");
     } break;
     case STMT_FOR_IN: {
